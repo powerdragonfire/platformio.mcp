@@ -9,6 +9,7 @@ All notable changes to this project are recorded here. The format follows
 ### Added
 - `bad_regex` structured error when a `wait_for`, `until`, `expect`, `fail_on`, or `filter` pattern is not a valid regular expression.
 - Log pruning: the log directory keeps the newest 200 files (`PLATFORMIO_MCP_MAX_LOGS` overrides).
+- `server.json` and the README ownership marker for the official MCP Registry.
 - GitHub Actions CI on Linux, macOS, and Windows, plus an integration job that builds the native fixture with real PlatformIO.
 
 ### Fixed

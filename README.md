@@ -187,3 +187,5 @@ Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 ## License
 
 MIT
+
+<!-- mcp-name: io.github.powerdragonfire/platformio.mcp -->
