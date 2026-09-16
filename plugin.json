@@ -1,0 +1,12 @@
+{
+  "name": "platformio",
+  "description": "Build, flash, monitor, test, and debug embedded firmware through PlatformIO: 29 MCP tools plus a skill that teaches the build-flash-verify loop.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Mihir Gandecha"
+  },
+  "homepage": "https://github.com/powerdragonfire/platformio.mcp",
+  "repository": "https://github.com/powerdragonfire/platformio.mcp",
+  "license": "MIT",
+  "keywords": ["platformio", "embedded", "esp32", "arduino", "stm32", "firmware", "serial", "mcp"]
+}

@@ -44,6 +44,17 @@ Use `"args": ["platformio.mcp[platformio]"]` to bundle PlatformIO Core.
 </details>
 
 <details>
+<summary><b>As a plugin</b> (Claude Code, Cursor: server + a skill that teaches the loop)</summary>
+
+The repo follows the [Open Plugins](https://agent-plugins.org) layout: `.mcp.json`, `skills/platformio/SKILL.md`, `rules/platformio.mdc`, `plugin.json`.
+
+```bash
+claude plugin marketplace add powerdragonfire/platformio.mcp   # Claude Code
+claude plugin install platformio@platformio.mcp
+```
+</details>
+
+<details>
 <summary><b>Already have PlatformIO?</b></summary>
 
 The server finds `platformio` / `pio` on your PATH or in `~/.platformio/penv`. Override with `PLATFORMIO_MCP_PIO=/path/to/pio`. Run `uvx platformio.mcp doctor` to see what the agent will see.

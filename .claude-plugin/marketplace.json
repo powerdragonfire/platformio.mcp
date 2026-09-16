@@ -1,0 +1,20 @@
+{
+  "name": "platformio.mcp",
+  "owner": {
+    "name": "Mihir Gandecha"
+  },
+  "metadata": {
+    "description": "PlatformIO MCP server and skill for embedded firmware work",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "platformio",
+      "source": "./",
+      "description": "Build, flash, monitor, test, and debug firmware through PlatformIO: 29 MCP tools plus a skill that teaches the build-flash-verify loop.",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": ["platformio", "embedded", "esp32", "arduino", "firmware"]
+    }
+  ]
+}
