@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.powerdragonfire/platformio.mcp",
   "title": "PlatformIO",
-  "description": "Give AI coding agents hands on real hardware through PlatformIO: build, flash, serial monitor, unit tests, static analysis, crash decoding, firmware size reports.",
+  "description": "PlatformIO for AI agents: build, flash, serial monitor, tests, crash decoding, size reports.",
   "repository": {
     "url": "https://github.com/powerdragonfire/platformio.mcp",
     "source": "github"
@@ -16,11 +16,23 @@
       "identifier": "platformio.mcp",
       "version": "0.1.0",
       "runtimeHint": "uvx",
-      "transport": { "type": "stdio" },
+      "transport": {
+        "type": "stdio"
+      },
       "environmentVariables": [
-        { "name": "PLATFORMIO_MCP_POLICY", "description": "full (default), build_only, or read_only", "default": "full" },
-        { "name": "PLATFORMIO_MCP_PROJECT_DIR", "description": "Default project directory when a tool is called without project_dir" },
-        { "name": "PLATFORMIO_MCP_PIO", "description": "Explicit path to the pio executable (auto-detected otherwise)" }
+        {
+          "name": "PLATFORMIO_MCP_POLICY",
+          "description": "full (default), build_only, or read_only",
+          "default": "full"
+        },
+        {
+          "name": "PLATFORMIO_MCP_PROJECT_DIR",
+          "description": "Default project directory when a tool is called without project_dir"
+        },
+        {
+          "name": "PLATFORMIO_MCP_PIO",
+          "description": "Explicit path to the pio executable (auto-detected otherwise)"
+        }
       ]
     }
   ]
