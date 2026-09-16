@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or help
+    url: https://github.com/powerdragonfire/platformio.mcp/discussions/categories/q-a
+    about: Ask how to use the server, which policy to pick, or how to get a board working
+  - name: Security vulnerability
+    url: https://github.com/powerdragonfire/platformio.mcp/security/advisories/new
+    about: Report privately. Do not open a public issue.
+  - name: PlatformIO itself
+    url: https://github.com/platformio/platformio-core/issues
+    about: Build or upload errors that also happen when you run `pio` directly belong upstream
