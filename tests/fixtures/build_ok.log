@@ -1,0 +1,20 @@
+Processing native (platform: native)
+--------------------------------------------------------------------------------
+Platform Manager: Installing native
+Downloading...
+Unpacking...
+Platform Manager: native@1.2.1 has been installed!
+Library Manager: Installing throwtheswitch/Unity @ ^2.6.1
+Downloading...
+Unpacking...
+Library Manager: Unity@2.6.1 has been installed!
+Verbose mode can be enabled via `-v, --verbose` option
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 1 compatible libraries
+Scanning dependencies...
+No dependencies
+Building in release mode
+Compiling .pio/build/native/src/main.o
+Linking .pio/build/native/program
+========================= [SUCCESS] Took 6.57 seconds =========================

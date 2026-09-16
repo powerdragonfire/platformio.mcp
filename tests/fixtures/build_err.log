@@ -1,0 +1,20 @@
+Processing native (platform: native)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 1 compatible libraries
+Scanning dependencies...
+No dependencies
+Building in release mode
+Compiling .pio/build/native/src/main.o
+src/main.cpp:7:15: error: expected expression
+    7 | int broken( { return 1 }
+      |               ^
+src/main.cpp:7:25: error: expected ';' after top level declarator
+    7 | int broken( { return 1 }
+      |                         ^
+      |                         ;
+2 errors generated.
+*** [.pio/build/native/src/main.o] Error 1
+========================== [FAILED] Took 0.42 seconds ==========================

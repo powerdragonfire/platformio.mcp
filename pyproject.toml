@@ -1,0 +1,52 @@
+[project]
+name = "platformio.mcp"
+version = "0.1.0"
+description = "MCP server that lets AI coding agents drive PlatformIO: boards, projects, build, flash, serial monitor, tests, static analysis, libraries."
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Mihir Gandecha", email = "mihirgandecha.2002@gmail.com" }
+]
+requires-python = ">=3.12"
+keywords = ["mcp", "platformio", "embedded", "esp32", "arduino", "firmware", "ai-agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Embedded Systems",
+]
+dependencies = [
+    "mcp>=1.0",
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+# `uvx "platformio.mcp[platformio]"` brings PlatformIO Core along for machines that have never installed it.
+platformio = ["platformio>=6.1"]
+
+[project.urls]
+Homepage = "https://github.com/powerdragonfire/platformio.mcp"
+Issues = "https://github.com/powerdragonfire/platformio.mcp/issues"
+
+[project.scripts]
+platformio-mcp = "platformio_mcp.cli:main"
+"platformio.mcp" = "platformio_mcp.cli:main"
+
+[tool.uv.build-backend]
+module-name = "platformio_mcp"
+
+[build-system]
+requires = ["uv_build>=0.11.6,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs a working `pio` on PATH and network access"]
+addopts = "-m 'not integration'"
