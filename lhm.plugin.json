@@ -1,0 +1,1260 @@
+{
+  "identifier": "powerdragonfire-platformio_mcp",
+  "name": "PlatformIO",
+  "version": "0.1.0",
+  "description": "PlatformIO for AI agents: list boards, init projects, build, flash, serial monitor, run tests, decode crash backtraces, and inspect firmware size, all through the PlatformIO CLI.",
+  "author": "Mihir Gandecha",
+  "authorUrl": "https://github.com/powerdragonfire",
+  "homepage": "https://github.com/powerdragonfire/platformio.mcp",
+  "icon": "🔌",
+  "category": "developer",
+  "tags": [
+    "platformio",
+    "embedded",
+    "esp32",
+    "arduino",
+    "firmware",
+    "serial",
+    "hardware",
+    "iot"
+  ],
+  "tools": [
+    {
+      "name": "pio_system_info",
+      "description": "Check that PlatformIO is installed and report its version, core directory, the active safety policy (full | build_only | read_only), the log directory, and any open serial monitor sessions. Call this first in a session; if PlatformIO is missing the result tells you how to install it.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object",
+        "title": "pio_system_infoArguments"
+      }
+    },
+    {
+      "name": "pio_list_boards",
+      "description": "Search PlatformIO's board catalogue (~1,700 boards). Query matches board id, name, MCU, or vendor, e.g. 'esp32-s3', 'uno', 'STM32F4', 'DOIT'. Returns board ids plus MCU, clock, RAM, flash, and frameworks. Use the returned `id` in platformio.ini or pio_project_init.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform"
+          },
+          "framework": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Framework"
+          },
+          "limit": {
+            "default": 30,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object",
+        "title": "pio_list_boardsArguments"
+      }
+    },
+    {
+      "name": "pio_board_info",
+      "description": "Full details for one board id: MCU, clock, RAM and flash sizes in bytes, supported frameworks, connectivity, and debug probes. Use it to learn memory limits before writing code.",
+      "inputSchema": {
+        "properties": {
+          "board_id": {
+            "title": "Board Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "board_id"
+        ],
+        "type": "object",
+        "title": "pio_board_infoArguments"
+      }
+    },
+    {
+      "name": "pio_project_init",
+      "description": "Create a new PlatformIO project (or add an environment to an existing one) with `pio project init`. Give an absolute project_dir, a board id from pio_list_boards, and optionally a framework (arduino, espidf, stm32cube, zephyr, ...). project_options are extra platformio.ini keys like 'monitor_speed=115200' or 'lib_deps=bblanchon/ArduinoJson'. Never hand-write platformio.ini for a new project; use this.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "title": "Project Dir",
+            "type": "string"
+          },
+          "board": {
+            "title": "Board",
+            "type": "string"
+          },
+          "framework": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Framework"
+          },
+          "project_options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Options"
+          }
+        },
+        "required": [
+          "project_dir",
+          "board"
+        ],
+        "type": "object",
+        "title": "pio_project_initArguments"
+      }
+    },
+    {
+      "name": "pio_project_envs",
+      "description": "Read platformio.ini and list every environment with its board, platform, framework, monitor/upload settings, lib_deps, and build_flags, plus which envs are default. Cheap; call before building or flashing.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          }
+        },
+        "type": "object",
+        "title": "pio_project_envsArguments"
+      }
+    },
+    {
+      "name": "pio_project_metadata",
+      "description": "Computed build metadata per environment: defines, include paths, compiler paths and flags, library dirs. Useful for understanding what the compiler actually sees. Triggers platform/toolchain install on first use.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          }
+        },
+        "type": "object",
+        "title": "pio_project_metadataArguments"
+      }
+    },
+    {
+      "name": "pio_build",
+      "description": "Compile the project (`pio run`). Returns a status, parsed compiler errors and warnings with file/line/column, RAM and Flash usage percentages, the last 40 lines of output, and a path to the full log. Fix the listed errors, then build again. First builds may take minutes while toolchains download.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "jobs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Jobs"
+          },
+          "verbose": {
+            "default": false,
+            "title": "Verbose",
+            "type": "boolean"
+          }
+        },
+        "type": "object",
+        "title": "pio_buildArguments"
+      }
+    },
+    {
+      "name": "pio_upload",
+      "description": "Build and flash firmware to the connected board (`pio run -t upload`). Refuses while a serial monitor session holds the port; stop it first. Pass upload_port when several boards are attached. Blocked when PLATFORMIO_MCP_POLICY is build_only or read_only.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "upload_port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Upload Port"
+          }
+        },
+        "type": "object",
+        "title": "pio_uploadArguments"
+      }
+    },
+    {
+      "name": "pio_clean",
+      "description": "Delete build artifacts for an env (`pio run -t clean`); full=true also removes downloaded dependencies (fullclean).",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "full": {
+            "default": false,
+            "title": "Full",
+            "type": "boolean"
+          }
+        },
+        "type": "object",
+        "title": "pio_cleanArguments"
+      }
+    },
+    {
+      "name": "pio_list_targets",
+      "description": "List extra build targets the platform offers for this project, such as buildfs, uploadfs, erase, size, or menuconfig.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          }
+        },
+        "type": "object",
+        "title": "pio_list_targetsArguments"
+      }
+    },
+    {
+      "name": "pio_run_target",
+      "description": "Run one named target from pio_list_targets (e.g. 'buildfs', 'uploadfs', 'erase', 'size'). Flash-related targets follow the same policy rules as pio_upload.",
+      "inputSchema": {
+        "properties": {
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "upload_port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Upload Port"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object",
+        "title": "pio_run_targetArguments"
+      }
+    },
+    {
+      "name": "pio_list_devices",
+      "description": "List serial ports (`pio device list`) and flag which ones look like USB dev boards (CP210x, CH340, FTDI, ESP, Arduino, ST-Link...). Use the port with pio_upload, pio_monitor_start, or pio_monitor_capture.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object",
+        "title": "pio_list_devicesArguments"
+      }
+    },
+    {
+      "name": "pio_monitor_start",
+      "description": "Open a background serial monitor session and return a session_id. Port and baud default from platformio.ini (monitor_port/monitor_speed) when project_dir is given, else the single detected dev board and 115200. Output is buffered (ring buffer, max_lines); read it with pio_monitor_read. The session holds the port, so stop it before pio_upload.",
+      "inputSchema": {
+        "properties": {
+          "port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Port"
+          },
+          "baud": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baud"
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "max_lines": {
+            "default": 5000,
+            "title": "Max Lines",
+            "type": "integer"
+          }
+        },
+        "type": "object",
+        "title": "pio_monitor_startArguments"
+      }
+    },
+    {
+      "name": "pio_monitor_read",
+      "description": "Read new serial lines from a session since `cursor` (start at 0) and get the next cursor back. Set wait_for to a regex to block up to timeout_s until a matching line arrives (e.g. wait_for='setup done|Guru Meditation'). Without wait_for and with timeout_s>0 it waits for at least one new line.",
+      "inputSchema": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "cursor": {
+            "default": 0,
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "max_lines": {
+            "default": 200,
+            "title": "Max Lines",
+            "type": "integer"
+          },
+          "wait_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Wait For"
+          },
+          "timeout_s": {
+            "default": 10,
+            "title": "Timeout S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object",
+        "title": "pio_monitor_readArguments"
+      }
+    },
+    {
+      "name": "pio_monitor_write",
+      "description": "Send text to the device over the open session's serial port (newline appended by default). Blocked under build_only/read_only policy.",
+      "inputSchema": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "newline": {
+            "default": true,
+            "title": "Newline",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "session_id",
+          "text"
+        ],
+        "type": "object",
+        "title": "pio_monitor_writeArguments"
+      }
+    },
+    {
+      "name": "pio_monitor_stop",
+      "description": "Close a serial monitor session and release the port.",
+      "inputSchema": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object",
+        "title": "pio_monitor_stopArguments"
+      }
+    },
+    {
+      "name": "pio_monitor_list",
+      "description": "List open serial monitor sessions with port, baud, buffered line count, and next cursor.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object",
+        "title": "pio_monitor_listArguments"
+      }
+    },
+    {
+      "name": "pio_monitor_capture",
+      "description": "One-shot serial capture with no session to manage: open the port, collect output for up to `seconds` (or until regex `until` matches), close the port, and return the lines. Ideal right after pio_upload to grab the boot log.",
+      "inputSchema": {
+        "properties": {
+          "port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Port"
+          },
+          "baud": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baud"
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "seconds": {
+            "default": 5,
+            "title": "Seconds",
+            "type": "number"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Until"
+          },
+          "max_lines": {
+            "default": 500,
+            "title": "Max Lines",
+            "type": "integer"
+          }
+        },
+        "type": "object",
+        "title": "pio_monitor_captureArguments"
+      }
+    },
+    {
+      "name": "pio_test",
+      "description": "Run PlatformIO unit tests (`pio test`, Unity framework) and return per-case pass/fail with file, line, and message. Tests live in test/test_<name>/. Native envs run on the host; embedded envs build, flash, and read results over serial (set without_uploading=true to only build them). filter/ignore take glob patterns like 'test_math*'.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filter"
+          },
+          "ignore": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ignore"
+          },
+          "without_uploading": {
+            "default": false,
+            "title": "Without Uploading",
+            "type": "boolean"
+          },
+          "without_building": {
+            "default": false,
+            "title": "Without Building",
+            "type": "boolean"
+          },
+          "upload_port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Upload Port"
+          },
+          "verbose": {
+            "default": false,
+            "title": "Verbose",
+            "type": "boolean"
+          }
+        },
+        "type": "object",
+        "title": "pio_testArguments"
+      }
+    },
+    {
+      "name": "pio_check",
+      "description": "Static analysis (`pio check`, cppcheck by default; clangtidy/pvs-studio if configured). Returns defects grouped and sorted by severity with file, line, CWE, and message. severity is the minimum level to report (low|medium|high).",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "severity": {
+            "default": "medium",
+            "title": "Severity",
+            "type": "string"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pattern"
+          },
+          "skip_packages": {
+            "default": true,
+            "title": "Skip Packages",
+            "type": "boolean"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool"
+          }
+        },
+        "type": "object",
+        "title": "pio_checkArguments"
+      }
+    },
+    {
+      "name": "pio_pkg_search",
+      "description": "Search the PlatformIO registry for libraries (default), platforms, or tools. Returns owner/name specs with the latest version and description. Example query: 'ArduinoJson', 'ssd1306 display', 'mqtt'.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "type": {
+            "default": "library",
+            "title": "Type",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object",
+        "title": "pio_pkg_searchArguments"
+      }
+    },
+    {
+      "name": "pio_pkg_install",
+      "description": "Install a library/platform/tool into the project and add it to platformio.ini (`pio pkg install -l spec`). spec examples: 'bblanchon/ArduinoJson@^7', 'adafruit/Adafruit NeoPixel', 'https://github.com/user/repo.git'. Restrict to one env with env=.",
+      "inputSchema": {
+        "properties": {
+          "spec": {
+            "title": "Spec",
+            "type": "string"
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "type": {
+            "default": "library",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "spec"
+        ],
+        "type": "object",
+        "title": "pio_pkg_installArguments"
+      }
+    },
+    {
+      "name": "pio_pkg_uninstall",
+      "description": "Remove a library/platform/tool from the project and platformio.ini.",
+      "inputSchema": {
+        "properties": {
+          "spec": {
+            "title": "Spec",
+            "type": "string"
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "type": {
+            "default": "library",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "spec"
+        ],
+        "type": "object",
+        "title": "pio_pkg_uninstallArguments"
+      }
+    },
+    {
+      "name": "pio_pkg_list",
+      "description": "List resolved platform, toolchain, and library packages for the project with versions.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          }
+        },
+        "type": "object",
+        "title": "pio_pkg_listArguments"
+      }
+    },
+    {
+      "name": "pio_pkg_outdated",
+      "description": "Show which project dependencies have newer versions available.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          }
+        },
+        "type": "object",
+        "title": "pio_pkg_outdatedArguments"
+      }
+    },
+    {
+      "name": "pio_pkg_update",
+      "description": "Update dependencies within the version ranges declared in platformio.ini.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          }
+        },
+        "type": "object",
+        "title": "pio_pkg_updateArguments"
+      }
+    },
+    {
+      "name": "pio_decode_backtrace",
+      "description": "Turn a crash dump into source locations. Give `text` containing an ESP32/ESP-IDF 'Guru Meditation' register dump and 'Backtrace: 0x...:0x...' line, or a Cortex-M HardFault pc/lr dump, or give `session_id` of an open monitor session to scan its buffer. Resolves every program-counter address with the toolchain's addr2line against the env's firmware.elf and returns function, file, line (with inlined frames) per address, plus the crash cause and reset reason. The ELF must be from the same build that was flashed.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Text"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          },
+          "include_all_hex": {
+            "default": false,
+            "title": "Include All Hex",
+            "type": "boolean"
+          }
+        },
+        "type": "object",
+        "title": "pio_decode_backtraceArguments"
+      }
+    },
+    {
+      "name": "pio_size_report",
+      "description": "Explain where flash and RAM go in the built firmware.elf: text/data/bss totals with percent of the board's flash and RAM, loaded sections classified as flash/ram, the biggest symbols (demangled, with file:line), and per-source-file totals. Use it to shrink firmware on purpose: drop the largest fonts/tables, remove unused features, tune build flags. Run pio_build first; `filter` is a regex applied to symbol names and file paths.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "top": {
+            "default": 25,
+            "title": "Top",
+            "type": "integer"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filter"
+          }
+        },
+        "type": "object",
+        "title": "pio_size_reportArguments"
+      }
+    },
+    {
+      "name": "pio_flash_and_verify",
+      "description": "Hardware-in-the-loop check with no human: build + flash (`pio run -t upload`), then open the serial port and watch the boot log until `expect` (regex) matches -> verdict pass, or `fail_on` matches -> verdict fail with the crash automatically decoded to file:line, or timeout_s elapses -> verdict timeout. Port and baud come from platformio.ini (monitor_port/monitor_speed) or the single detected board. Set expect to a line your firmware prints once it is healthy, e.g. 'WiFi connected'. Blocked under build_only/read_only policy.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "expect": {
+            "default": "setup done|ready|started|Booting|loop",
+            "title": "Expect",
+            "type": "string"
+          },
+          "fail_on": {
+            "default": "Guru Meditation|panic'ed|abort\\(\\) was called|assert failed|HardFault|Hard Fault|BusFault|UsageFault|MemManage|stack overflow|Task watchdog|Brownout|CORRUPT HEAP|Backtrace:|rst:0x[0-9a-f]+ \\((?:SW_CPU_RESET|TG\\dWDT_SYS_RESET|RTCWDT_RTC_RESET|PANIC)",
+            "title": "Fail On",
+            "type": "string"
+          },
+          "timeout_s": {
+            "default": 30,
+            "title": "Timeout S",
+            "type": "number"
+          },
+          "upload_port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Upload Port"
+          },
+          "monitor_port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Monitor Port"
+          },
+          "baud": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baud"
+          },
+          "stop_open_sessions": {
+            "default": false,
+            "title": "Stop Open Sessions",
+            "type": "boolean"
+          },
+          "max_lines": {
+            "default": 500,
+            "title": "Max Lines",
+            "type": "integer"
+          },
+          "settle_s": {
+            "default": 1.5,
+            "title": "Settle S",
+            "type": "number"
+          }
+        },
+        "type": "object",
+        "title": "pio_flash_and_verifyArguments"
+      }
+    }
+  ]
+}
