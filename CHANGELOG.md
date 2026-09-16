@@ -18,6 +18,9 @@ All notable changes to this project are recorded here. The format follows
 - Toolchain prefix derivation kept the caller's path separator, fixing `pio_decode_backtrace` and `pio_size_report` on Windows.
 - Any unexpected exception inside a tool now returns `ok: false` with the exception text instead of a bare "Error executing tool".
 
+### Security
+- Raised the `mcp` floor from `>=1.0` to `>=2.2`. The old floor let scanners resolve to SDK releases affected by CVE-2025-53365, CVE-2025-53366, CVE-2025-66416, CVE-2026-52869, and CVE-2026-59950 (all fixed by mcp 1.28.1). The server already required the 2.x API, so no behaviour changes.
+
 ## [0.1.0] - 2026-09-16
 
 First release.

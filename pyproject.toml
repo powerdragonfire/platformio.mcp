@@ -17,7 +17,7 @@ classifiers = [
     "Topic :: Software Development :: Embedded Systems",
 ]
 dependencies = [
-    "mcp>=1.0",
+    "mcp>=2.2",
     "pyserial>=3.5",
 ]
 
