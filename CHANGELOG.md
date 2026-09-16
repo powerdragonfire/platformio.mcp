@@ -12,6 +12,7 @@ All notable changes to this project are recorded here. The format follows
 - GitHub Actions CI on Linux, macOS, and Windows, plus an integration job that builds the native fixture with real PlatformIO.
 
 ### Fixed
+- Toolchain prefix derivation kept the caller's path separator, fixing `pio_decode_backtrace` and `pio_size_report` on Windows.
 - Any unexpected exception inside a tool now returns `ok: false` with the exception text instead of a bare "Error executing tool".
 
 ## [0.1.0] - 2026-09-16

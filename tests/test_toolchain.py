@@ -63,7 +63,7 @@ NM_OUT = """3f40064c 00002e66 d Roboto_Light_60Bitmaps
 
 def test_derive_prefix():
     assert tc.derive_prefix("/x/bin/xtensa-esp32-elf-gcc") == "/x/bin/xtensa-esp32-elf-"
-    assert tc.derive_prefix("C:\\pio\\arm-none-eabi-gcc.exe").endswith("arm-none-eabi-")
+    assert tc.derive_prefix("C:\\pio\\arm-none-eabi-gcc.exe") == "C:\\pio\\arm-none-eabi-"
     assert tc.derive_prefix("avr-gcc") == "avr-"
     assert tc.derive_prefix("gcc") == ""
     assert tc.derive_prefix("/usr/bin/clang") == ""

@@ -41,15 +41,13 @@ class Toolchain:
 
 def derive_prefix(cc_path: str) -> str:
     """'/x/bin/xtensa-esp32-elf-gcc' -> '/x/bin/xtensa-esp32-elf-', 'gcc' -> '', 'arm-none-eabi-gcc.exe' -> 'arm-none-eabi-'."""
-    name = os.path.basename(cc_path)
+    name = cc_path.replace("\\", "/").rsplit("/", 1)[-1]
     stem = CC_SUFFIX_RE.sub("", name)
-    directory = os.path.dirname(cc_path)
-    if not stem or stem in ("-",):
-        return ""
     if not stem.endswith("-"):
-        # e.g. "clang" stripped to "" handled above; "xtensa-esp32-elf-" keeps its dash
+        # "gcc", "clang", "gcc-13" strip to ""; anything else without a dash is not a target prefix
         return ""
-    return os.path.join(directory, stem) if directory else stem
+    # Keep the caller's own directory separator so Windows paths stay Windows paths.
+    return cc_path[: len(cc_path) - len(name)] + stem
 
 
 def _find_binary(prefix: str, name: str, cc_path: str) -> str | None:
