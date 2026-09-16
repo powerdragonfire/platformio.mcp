@@ -7,6 +7,7 @@ All notable changes to this project are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- Community files: CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, issue forms, PR template, Dependabot config.
 - Open Plugins layout (`.mcp.json`, `plugin.json`, `skills/platformio/SKILL.md`, `rules/platformio.mdc`) so the repo installs as a Claude Code or Cursor plugin and lists on cursor.directory.
 - `bad_regex` structured error when a `wait_for`, `until`, `expect`, `fail_on`, or `filter` pattern is not a valid regular expression.
 - Log pruning: the log directory keeps the newest 200 files (`PLATFORMIO_MCP_MAX_LOGS` overrides).

@@ -191,7 +191,11 @@ claude mcp add platformio -- uv run --directory /path/to/platformio.mcp platform
 
 Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
-## 🤝 Prior art
+## 🤝 Contributing
+
+Bug reports from real boards are the most useful thing you can send. Use the [issue forms](https://github.com/powerdragonfire/platformio.mcp/issues/new/choose), ask questions in [Discussions](https://github.com/powerdragonfire/platformio.mcp/discussions), and read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR. Issues tagged [good first issue](https://github.com/powerdragonfire/platformio.mcp/labels/good%20first%20issue) are scoped for newcomers.
+
+## 🔭 Prior art
 
 [jl-codes/platformio-mcp](https://github.com/jl-codes/platformio-mcp) is a TypeScript server with the same goal, a web dashboard, and a GPIO pin audit. This project exists for people who want a Python-only install through `uvx`, one that can bundle PlatformIO itself, and crash decoding and size budgeting built in.
 

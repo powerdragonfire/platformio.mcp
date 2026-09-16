@@ -1,0 +1,59 @@
+name: Bug report
+description: A tool returned the wrong result, crashed, or hung
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Run `uv run platformio-mcp doctor` (or `uvx platformio.mcp doctor`) and paste the output below; it captures most of what we need.
+  - type: input
+    id: tool
+    attributes:
+      label: Tool
+      description: Which MCP tool misbehaved?
+      placeholder: pio_flash_and_verify
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did the tool return, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Tool arguments, the relevant part of `platformio.ini`, and the prompt you gave the agent if that matters.
+      render: text
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `platformio-mcp doctor`
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: board
+    attributes:
+      label: Board and framework
+      placeholder: esp32dev, arduino
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      options:
+        - Claude Code
+        - Claude Desktop
+        - Cursor
+        - Codex
+        - Windsurf
+        - Cline
+        - Other
+  - type: textarea
+    id: log
+    attributes:
+      label: Log file
+      description: Every tool returns a `log_path`. Attach or paste the relevant part.
+      render: text

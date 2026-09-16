@@ -1,0 +1,29 @@
+name: Feature request
+description: A new tool, a new decoder, or a change to how an existing tool behaves
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is the agent unable to do today?
+      description: Describe the embedded workflow step that is missing or awkward.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: A new tool? New arguments on an existing one? A parser for another crash format? Include the `pio` command it would wrap if you know it.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform or board this matters for
+      placeholder: STM32 with ST-Link, RP2040, nRF52...
+  - type: checkboxes
+    id: willing
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to open a PR for this
