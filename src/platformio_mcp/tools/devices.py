@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
 from typing import Any
 
 from ..core import (
@@ -57,6 +60,93 @@ def _pick_port(port: str | None, project_dir: str | None, env: str | None) -> tu
         else:
             raise RuntimeError(f"several candidate ports: {', '.join(likely)}. Pass port explicitly.")
     return port, baud
+
+
+def _port_holders(port: str) -> tuple[list[dict[str, Any]], str]:
+    """Other processes with the port open, via lsof then fuser. Windows has no cheap equivalent."""
+    if sys.platform == "win32":
+        return [], "unavailable"
+    pids: list[int] = []
+    method = "unavailable"
+    for cmd in (["lsof", "-t", port], ["fuser", port]):
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            continue
+        method = cmd[0]
+        pids = [int(t) for t in re.findall(r"\d+", res.stdout)]
+        break
+    holders: list[dict[str, Any]] = []
+    for pid in sorted(set(pids)):
+        if pid == os.getpid():
+            continue
+        command = None
+        try:
+            ps = subprocess.run(["ps", "-o", "comm=", "-p", str(pid)], capture_output=True, text=True, timeout=10)
+            command = ps.stdout.strip() or None
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+        holders.append({"pid": pid, "command": command})
+    return holders, method
+
+
+def _port_hint(diag: dict[str, Any], error: str | None = None) -> str:
+    port = diag["port"]
+    if diag["held_by_session"]:
+        return f"port {port} is held by our monitor session {diag['held_by_session']}; pass stop_open_sessions=true to pio_upload or call pio_monitor_stop('{diag['held_by_session']}') first."
+    if diag["held_by_processes"]:
+        who = ", ".join(f"PID {h['pid']}" + (f" ({h['command']})" if h["command"] else "") for h in diag["held_by_processes"])
+        return f"port {port} is open in another process: {who}. Close that program (serial monitor, screen, minicom, the IDE) and retry."
+    if diag["exists"] is False:
+        return f"{port} does not exist. Run pio_list_devices; check the USB cable carries data (not charge-only), the driver (CP210x/CH340) is installed, and the board is powered."
+    perm = diag.get("permission") or {}
+    if perm and not (perm.get("readable") and perm.get("writable")):
+        if sys.platform.startswith("linux"):
+            return f"no read/write permission on {port}. Add yourself to the serial group (`sudo usermod -aG dialout $USER`, or `uucp` on Arch) and log in again, or `sudo chmod a+rw {port}` for this session."
+        return f"no read/write permission on {port}; check ownership and permissions of the device node."
+    if error == "no_response":
+        return f"{port} opened but the board did not answer. Put it in bootloader mode (hold BOOT, tap EN/RST, release BOOT), try a lower upload_speed, or check that {port} is the board's programming port and not a second UART."
+    if error == "port_busy":
+        return f"{port} reports busy but no holder was found (process check: {diag['process_check']}). On Windows close any serial monitor or IDE; otherwise unplug and replug the board."
+    if error == "port_permission":
+        return f"{port} refused access. On Windows close the program using it; on Linux check the dialout/uucp group."
+    return f"{port} looks free: it exists, no session or process holds it, and permissions allow read/write."
+
+
+def diagnose_port(port: str, error: str | None = None) -> dict[str, Any]:
+    """Explain why a serial port cannot be used. Reports only; never kills anything."""
+    held = monitors.session_on_port(port)
+    try:
+        listed = [d["port"] for d in _devices()]
+        in_list: bool | None = port in listed
+    except Exception:
+        in_list = None
+    if sys.platform == "win32":
+        exists = in_list
+        permission = None
+    else:
+        exists = os.path.exists(port)
+        permission = {"readable": os.access(port, os.R_OK), "writable": os.access(port, os.W_OK)} if exists else None
+    holders, method = _port_holders(port) if exists else ([], "skipped")
+    diag: dict[str, Any] = {
+        "port": port,
+        "exists": exists,
+        "in_device_list": in_list,
+        "held_by_session": held.id if held else None,
+        "held_by_processes": holders,
+        "process_check": method,
+        "permission": permission,
+        "platform": sys.platform,
+    }
+    diag["hint"] = _port_hint(diag, error)
+    return diag
+
+
+@guard
+def pio_port_diagnose(port: str | None = None, project_dir: str | None = None, env: str | None = None) -> dict[str, Any]:
+    port, _ = _pick_port(port, project_dir, env)
+    diag = diagnose_port(port)
+    return {"ok": True, "summary": diag["hint"], **diag}
 
 
 @guard
@@ -128,6 +218,11 @@ def register(mcp) -> None:
         "List serial ports (`pio device list`) and flag which ones look like USB dev boards (CP210x, CH340, FTDI, ESP, Arduino, ST-Link...). "
         "Use the port with pio_upload, pio_monitor_start, or pio_monitor_capture."
     ))(pio_list_devices)
+    mcp.tool(name="pio_port_diagnose", description=(
+        "Explain why a serial port is unusable before or after a failed upload: whether it exists, whether one of our monitor sessions "
+        "holds it, which other process has it open (lsof/fuser on macOS and Linux), and read/write permission, plus the concrete fix. "
+        "Port defaults from platformio.ini or the single detected board. Reports only; it never closes anything."
+    ))(pio_port_diagnose)
     mcp.tool(name="pio_monitor_start", description=(
         "Open a background serial monitor session and return a session_id. Port and baud default from platformio.ini "
         "(monitor_port/monitor_speed) when project_dir is given, else the single detected dev board and 115200. "
