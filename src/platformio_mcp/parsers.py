@@ -17,6 +17,26 @@ ENV_RE = re.compile(r"^Processing (?P<env>\S+) \(", re.MULTILINE)
 PKG_SEARCH_HEAD_RE = re.compile(r"^Found (?P<total>\d+) packages \(page (?P<page>\d+) of (?P<pages>\d+)\)", re.MULTILINE)
 PKG_LINE_RE = re.compile(r"^(?P<indent>[\s│├└─]*)(?P<kind>Platform|Tool|Library)?\s*(?P<spec>[\w.@:/ -]+?) @ (?P<version>[^\s(]+)(?: \((?P<req>[^)]*)\))?\s*$")
 
+# Serial-port failures during upload, most specific first. `port_missing` is the generic "could not open" bucket.
+PORT_ERROR_PATTERNS = (
+    ("port_permission", re.compile(r"PermissionError\(13|Access is denied|Permission denied|Errno 13", re.I)),
+    ("port_busy", re.compile(r"Device or resource busy|Resource busy|Errno 16|port is busy|already in use", re.I)),
+    ("no_response", re.compile(
+        r"Timed out waiting for packet header|Failed to connect to ESP|No serial data received|Wrong boot mode|Invalid head of packet|"
+        r"programmer is not responding|not in sync|stk500_recv\(\)|stk500_getsync\(\)|Failed to open the debug port|No device found on",
+        re.I,
+    )),
+    ("port_missing", re.compile(r"could not open port|A fatal error occurred: Could not open|SerialException|No such file or directory: '?/dev|Errno 2\b.*(?:tty|cu\.|COM)|FileNotFoundError.*(?:tty|cu\.|COM)|Could not find a port|No serial ports found", re.I)),
+)
+
+
+def classify_port_error(text: str) -> str | None:
+    """Map an upload log to port_permission / port_busy / no_response / port_missing, or None when the failure is not port-related."""
+    for code, rx in PORT_ERROR_PATTERNS:
+        if rx.search(text):
+            return code
+    return None
+
 
 @dataclass
 class Diagnostic:
