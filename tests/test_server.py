@@ -11,6 +11,7 @@ EXPECTED_TOOLS = {
     "pio_test", "pio_check",
     "pio_pkg_search", "pio_pkg_install", "pio_pkg_uninstall", "pio_pkg_list", "pio_pkg_outdated", "pio_pkg_update",
     "pio_decode_backtrace", "pio_size_report", "pio_flash_and_verify",
+    "pio_upload_ota",
 }
 
 
