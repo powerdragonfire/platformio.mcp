@@ -13,6 +13,7 @@ EXPECTED_TOOLS = {
     "pio_decode_backtrace", "pio_size_report", "pio_flash_and_verify",
     "pio_upload_ota",
     "pio_partition_table", "pio_coredump",
+    "pio_power_profile",
 }
 
 
