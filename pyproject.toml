@@ -26,6 +26,8 @@ dependencies = [
 platformio = ["platformio>=6.1"]
 # `uvx "platformio.mcp[coredump]"` adds the esp-coredump analyzer that pio_coredump runs on a retrieved dump.
 coredump = ["esp-coredump>=1.10"]
+# `uvx "platformio.mcp[power]"` adds the Nordic Power Profiler Kit II driver for pio_power_profile(source="ppk2").
+power = ["ppk2-api"]
 
 [project.urls]
 Homepage = "https://github.com/powerdragonfire/platformio.mcp"
