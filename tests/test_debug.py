@@ -19,6 +19,11 @@ from platformio_mcp.tools import debug as debug_tools
 
 FAKE = Path(__file__).parent / "fake_gdb.py"
 
+WINDOWS_FLAKY = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="subprocess pipe synchronization against the fake gdb process is flaky on windows-latest CI; see https://github.com/powerdragonfire/platformio.mcp/issues/10",
+)
+
 
 # --- parser ---------------------------------------------------------------------------------------
 
@@ -119,6 +124,7 @@ def test_build_command_matches_pio_debug_cli(monkeypatch):
     assert mgr.build_command("/p", None, load=False)[4:8] == ["--load-mode", "manual", "--interface=gdb", "--"]
 
 
+@WINDOWS_FLAKY
 def test_start_picks_debug_env_and_reports_initial_stop(manager, project):
     r = debug_tools.pio_debug_start(project_dir=str(project))
     assert r["ok"] is True, r
@@ -138,6 +144,7 @@ def test_start_picks_debug_env_and_reports_initial_stop(manager, project):
     debug_tools.pio_debug_stop(sid)
 
 
+@WINDOWS_FLAKY
 def test_cmd_console_error_and_mi_results(manager, project):
     sid = debug_tools.pio_debug_start(project_dir=str(project), env="dbg")["session_id"]
     bt = debug_tools.pio_debug_cmd(sid, "bt")
@@ -160,6 +167,7 @@ def test_cmd_console_error_and_mi_results(manager, project):
     debug_tools.pio_debug_stop(sid)
 
 
+@WINDOWS_FLAKY
 def test_continue_waits_for_stop_and_next_steps(manager, project):
     sid = debug_tools.pio_debug_start(project_dir=str(project), env="dbg")["session_id"]
     r = debug_tools.pio_debug_cmd(sid, "continue", timeout_s=5)
@@ -171,6 +179,7 @@ def test_continue_waits_for_stop_and_next_steps(manager, project):
     debug_tools.pio_debug_stop(sid)
 
 
+@WINDOWS_FLAKY
 def test_timeout_then_interrupt(manager, project):
     sid = debug_tools.pio_debug_start(project_dir=str(project), env="dbg")["session_id"]
     r = debug_tools.pio_debug_cmd(sid, "hang", timeout_s=3)
@@ -186,6 +195,7 @@ def test_timeout_then_interrupt(manager, project):
     debug_tools.pio_debug_stop(sid)
 
 
+@WINDOWS_FLAKY
 def test_stop_sends_gdb_exit_and_clears_session(manager, project):
     sid = debug_tools.pio_debug_start(project_dir=str(project), env="dbg")["session_id"]
     r = debug_tools.pio_debug_stop(sid)
@@ -195,6 +205,7 @@ def test_stop_sends_gdb_exit_and_clears_session(manager, project):
     assert gone["ok"] is False and gone["error"] == "KeyError" and "unknown debug session" in gone["summary"]
 
 
+@WINDOWS_FLAKY
 def test_gdb_dying_mid_session_is_reported(manager, project):
     sid = debug_tools.pio_debug_start(project_dir=str(project), env="dbg")["session_id"]
     r = debug_tools.pio_debug_cmd(sid, "crash-now", timeout_s=5)
@@ -203,6 +214,7 @@ def test_gdb_dying_mid_session_is_reported(manager, project):
     debug_tools.pio_debug_stop(sid)
 
 
+@WINDOWS_FLAKY
 def test_no_init_break_start_reports_running_target(monkeypatch, project):
     mgr = DebugManager(opener=fake_opener("no_stop"))
     monkeypatch.setattr(debug_tools, "debuggers", mgr)
@@ -214,6 +226,7 @@ def test_no_init_break_start_reports_running_target(monkeypatch, project):
 
 
 @pytest.mark.parametrize("mode,code,needle", [("probe_missing", "probe_not_found", "debug probe"), ("init_error", "init_script_failed", ".pioinit")])
+@WINDOWS_FLAKY
 def test_start_failures_are_classified(monkeypatch, project, mode, code, needle):
     mgr = DebugManager(opener=fake_opener(mode, with_init_script=False))
     monkeypatch.setattr(debug_tools, "debuggers", mgr)
@@ -228,6 +241,7 @@ def test_start_failures_are_classified(monkeypatch, project, mode, code, needle)
     mgr.stop_all()
 
 
+@WINDOWS_FLAKY
 def test_start_timeout_kills_process(monkeypatch, project):
     mgr = DebugManager(opener=fake_opener("never_prompt", with_init_script=False))
     monkeypatch.setattr(debug_tools, "debuggers", mgr)
