@@ -9,6 +9,7 @@ from mcp.server.mcpserver import MCPServer
 
 from . import __version__
 from .core import monitors, policy
+from .debugger import debuggers
 from .tools import register_all
 
 INSTRUCTIONS = """PlatformIO MCP gives you hands on embedded hardware through the PlatformIO CLI.
@@ -29,6 +30,7 @@ async def lifespan(server: MCPServer) -> AsyncIterator[None]:
         yield
     finally:
         monitors.stop_all()
+        debuggers.stop_all()
 
 
 def create_server() -> MCPServer:
