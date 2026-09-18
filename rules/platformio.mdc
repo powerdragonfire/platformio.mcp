@@ -10,3 +10,8 @@ alwaysApply: false
 - Stop serial sessions (`pio_monitor_stop`) before flashing.
 - Add libraries with `pio_pkg_install`, which edits `platformio.ini` itself.
 - Above 90% flash, run `pio_size_report` before adding features.
+- Upload cannot open the port? Read `port_diagnosis` or call `pio_port_diagnose`; pass `stop_open_sessions=true` when our own session holds it.
+- ESP32 flash looks fine but the device misbehaves: `pio_partition_table(read_device=true)`; after a crash with no serial dump, `pio_coredump`.
+- Suspected leak or stack overflow: `pio_memory_watch` on the monitor session; add the `instrumentation_hint` snippet if nothing is recognized.
+- Library conflicts or odd LDF behaviour: `pio_deps_check(build=true)`.
+- Need breakpoints, not prints: `pio_debug_start` then `pio_debug_cmd`; stop the session before flashing.

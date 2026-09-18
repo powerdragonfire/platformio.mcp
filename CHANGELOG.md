@@ -7,6 +7,17 @@ All notable changes to this project are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- 11 new tools (40 total):
+  - `pio_upload_ota`: flash over Wi-Fi to ArduinoOTA (espota) boards with a reachability pre-check and failures mapped to the fix.
+  - `pio_port_diagnose`: explain why a serial port cannot be used (our session, another process via lsof/fuser, permissions, board not answering).
+  - `pio_partition_table`: validate the ESP32 partition CSV (alignment, overlaps, flash fit, OTA slots, app fit) and, with `read_device`, diff it against the table on the chip.
+  - `pio_coredump`: read the core dump partition over esptool and decode it with the optional `esp-coredump` analyzer.
+  - `pio_memory_watch`: heap and stack telemetry parsed from serial output with leak, fragmentation, and stack-headroom verdicts.
+  - `pio_power_profile`: current draw from a serial meter or a Nordic PPK2 with sleep/active split, energy, and battery estimate.
+  - `pio_deps_check`: library name collisions, unpinned specs, missing and leftover libraries, circular dependencies, and the LDF dependency graph.
+  - `pio_debug_start` / `pio_debug_cmd` / `pio_debug_stop` / `pio_debug_list`: live GDB sessions over `pio debug --interface=gdb` with GDB/MI parsed into structured results.
+- `stop_open_sessions` on `pio_upload` and `pio_run_target` releases our own monitor sessions before flashing; upload failures now carry `port_error` and `port_diagnosis`.
+- Optional extras `coredump` (esp-coredump) and `power` (ppk2-api).
 - Community files: CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, issue forms, PR template, Dependabot config.
 - Open Plugins layout (`.mcp.json`, `plugin.json`, `skills/platformio/SKILL.md`, `rules/platformio.mdc`) so the repo installs as a Claude Code or Cursor plugin and lists on cursor.directory.
 - `bad_regex` structured error when a `wait_for`, `until`, `expect`, `fail_on`, or `filter` pattern is not a valid regular expression.
