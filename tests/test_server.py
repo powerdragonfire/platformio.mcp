@@ -16,6 +16,7 @@ EXPECTED_TOOLS = {
     "pio_partition_table", "pio_coredump",
     "pio_power_profile",
     "pio_memory_watch",
+    "pio_debug_start", "pio_debug_cmd", "pio_debug_stop", "pio_debug_list",
 }
 
 
