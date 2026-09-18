@@ -6,6 +6,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-18
+
 ### Added
 - 11 new tools (40 total):
   - `pio_upload_ota`: flash over Wi-Fi to ArduinoOTA (espota) boards with a reachability pre-check and failures mapped to the fix.

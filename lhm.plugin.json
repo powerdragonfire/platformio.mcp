@@ -1,7 +1,7 @@
 {
   "identifier": "powerdragonfire-platformio_mcp",
   "name": "PlatformIO",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "PlatformIO for AI agents: build, flash (serial or OTA), serial monitor, tests, crash and core-dump decoding, partition-table checks, memory and power profiling, dependency audits, and live GDB debugging through the PlatformIO CLI.",
   "author": "Mihir Gandecha",
   "authorUrl": "https://github.com/powerdragonfire",

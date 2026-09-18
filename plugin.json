@@ -1,7 +1,7 @@
 {
   "name": "platformio",
   "description": "Build, flash, monitor, test, and debug embedded firmware through PlatformIO: 40 MCP tools plus a skill that teaches the build-flash-verify loop.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Mihir Gandecha"
   },
