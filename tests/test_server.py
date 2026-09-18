@@ -10,6 +10,7 @@ EXPECTED_TOOLS = {
     "pio_list_devices", "pio_port_diagnose", "pio_monitor_start", "pio_monitor_read", "pio_monitor_write", "pio_monitor_stop", "pio_monitor_list", "pio_monitor_capture",
     "pio_test", "pio_check",
     "pio_pkg_search", "pio_pkg_install", "pio_pkg_uninstall", "pio_pkg_list", "pio_pkg_outdated", "pio_pkg_update",
+    "pio_deps_check",
     "pio_decode_backtrace", "pio_size_report", "pio_flash_and_verify",
     "pio_upload_ota",
     "pio_partition_table", "pio_coredump",
