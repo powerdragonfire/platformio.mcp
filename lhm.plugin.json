@@ -2,7 +2,7 @@
   "identifier": "powerdragonfire-platformio_mcp",
   "name": "PlatformIO",
   "version": "0.1.0",
-  "description": "PlatformIO for AI agents: list boards, init projects, build, flash, serial monitor, run tests, decode crash backtraces, and inspect firmware size, all through the PlatformIO CLI.",
+  "description": "PlatformIO for AI agents: build, flash (serial or OTA), serial monitor, tests, crash and core-dump decoding, partition-table checks, memory and power profiling, dependency audits, and live GDB debugging through the PlatformIO CLI.",
   "author": "Mihir Gandecha",
   "authorUrl": "https://github.com/powerdragonfire",
   "homepage": "https://github.com/powerdragonfire/platformio.mcp",
@@ -24,8 +24,8 @@
       "description": "Check that PlatformIO is installed and report its version, core directory, the active safety policy (full | build_only | read_only), the log directory, and any open serial monitor sessions. Call this first in a session; if PlatformIO is missing the result tells you how to install it.",
       "inputSchema": {
         "properties": {},
-        "type": "object",
-        "title": "pio_system_infoArguments"
+        "title": "pio_system_infoArguments",
+        "type": "object"
       }
     },
     {
@@ -70,8 +70,8 @@
         "required": [
           "query"
         ],
-        "type": "object",
-        "title": "pio_list_boardsArguments"
+        "title": "pio_list_boardsArguments",
+        "type": "object"
       }
     },
     {
@@ -87,8 +87,8 @@
         "required": [
           "board_id"
         ],
-        "type": "object",
-        "title": "pio_board_infoArguments"
+        "title": "pio_board_infoArguments",
+        "type": "object"
       }
     },
     {
@@ -136,8 +136,8 @@
           "project_dir",
           "board"
         ],
-        "type": "object",
-        "title": "pio_project_initArguments"
+        "title": "pio_project_initArguments",
+        "type": "object"
       }
     },
     {
@@ -158,8 +158,8 @@
             "title": "Project Dir"
           }
         },
-        "type": "object",
-        "title": "pio_project_envsArguments"
+        "title": "pio_project_envsArguments",
+        "type": "object"
       }
     },
     {
@@ -192,8 +192,8 @@
             "title": "Env"
           }
         },
-        "type": "object",
-        "title": "pio_project_metadataArguments"
+        "title": "pio_project_metadataArguments",
+        "type": "object"
       }
     },
     {
@@ -243,13 +243,13 @@
             "type": "boolean"
           }
         },
-        "type": "object",
-        "title": "pio_buildArguments"
+        "title": "pio_buildArguments",
+        "type": "object"
       }
     },
     {
       "name": "pio_upload",
-      "description": "Build and flash firmware to the connected board (`pio run -t upload`). Refuses while a serial monitor session holds the port; stop it first. Pass upload_port when several boards are attached. Blocked when PLATFORMIO_MCP_POLICY is build_only or read_only.",
+      "description": "Build and flash firmware to the connected board (`pio run -t upload`). Refuses while a serial monitor session holds the port unless stop_open_sessions=true, which closes our own session(s) first. Pass upload_port when several boards are attached. Port failures come back classified (port_busy, port_permission, port_missing, no_response) with a port_diagnosis naming the holder and the fix. Blocked when PLATFORMIO_MCP_POLICY is build_only or read_only.",
       "inputSchema": {
         "properties": {
           "project_dir": {
@@ -287,10 +287,15 @@
             ],
             "default": null,
             "title": "Upload Port"
+          },
+          "stop_open_sessions": {
+            "default": false,
+            "title": "Stop Open Sessions",
+            "type": "boolean"
           }
         },
-        "type": "object",
-        "title": "pio_uploadArguments"
+        "title": "pio_uploadArguments",
+        "type": "object"
       }
     },
     {
@@ -328,8 +333,8 @@
             "type": "boolean"
           }
         },
-        "type": "object",
-        "title": "pio_cleanArguments"
+        "title": "pio_cleanArguments",
+        "type": "object"
       }
     },
     {
@@ -362,13 +367,13 @@
             "title": "Env"
           }
         },
-        "type": "object",
-        "title": "pio_list_targetsArguments"
+        "title": "pio_list_targetsArguments",
+        "type": "object"
       }
     },
     {
       "name": "pio_run_target",
-      "description": "Run one named target from pio_list_targets (e.g. 'buildfs', 'uploadfs', 'erase', 'size'). Flash-related targets follow the same policy rules as pio_upload.",
+      "description": "Run one named target from pio_list_targets (e.g. 'buildfs', 'uploadfs', 'erase', 'size'). Flash-related targets follow the same policy, stop_open_sessions, and port-diagnosis rules as pio_upload.",
       "inputSchema": {
         "properties": {
           "target": {
@@ -410,13 +415,18 @@
             ],
             "default": null,
             "title": "Upload Port"
+          },
+          "stop_open_sessions": {
+            "default": false,
+            "title": "Stop Open Sessions",
+            "type": "boolean"
           }
         },
         "required": [
           "target"
         ],
-        "type": "object",
-        "title": "pio_run_targetArguments"
+        "title": "pio_run_targetArguments",
+        "type": "object"
       }
     },
     {
@@ -424,8 +434,54 @@
       "description": "List serial ports (`pio device list`) and flag which ones look like USB dev boards (CP210x, CH340, FTDI, ESP, Arduino, ST-Link...). Use the port with pio_upload, pio_monitor_start, or pio_monitor_capture.",
       "inputSchema": {
         "properties": {},
-        "type": "object",
-        "title": "pio_list_devicesArguments"
+        "title": "pio_list_devicesArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_port_diagnose",
+      "description": "Explain why a serial port is unusable before or after a failed upload: whether it exists, whether one of our monitor sessions holds it, which other process has it open (lsof/fuser on macOS and Linux), and read/write permission, plus the concrete fix. Port defaults from platformio.ini or the single detected board. Reports only; it never closes anything.",
+      "inputSchema": {
+        "properties": {
+          "port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Port"
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          }
+        },
+        "title": "pio_port_diagnoseArguments",
+        "type": "object"
       }
     },
     {
@@ -487,8 +543,8 @@
             "type": "integer"
           }
         },
-        "type": "object",
-        "title": "pio_monitor_startArguments"
+        "title": "pio_monitor_startArguments",
+        "type": "object"
       }
     },
     {
@@ -531,8 +587,8 @@
         "required": [
           "session_id"
         ],
-        "type": "object",
-        "title": "pio_monitor_readArguments"
+        "title": "pio_monitor_readArguments",
+        "type": "object"
       }
     },
     {
@@ -558,8 +614,8 @@
           "session_id",
           "text"
         ],
-        "type": "object",
-        "title": "pio_monitor_writeArguments"
+        "title": "pio_monitor_writeArguments",
+        "type": "object"
       }
     },
     {
@@ -575,8 +631,8 @@
         "required": [
           "session_id"
         ],
-        "type": "object",
-        "title": "pio_monitor_stopArguments"
+        "title": "pio_monitor_stopArguments",
+        "type": "object"
       }
     },
     {
@@ -584,8 +640,8 @@
       "description": "List open serial monitor sessions with port, baud, buffered line count, and next cursor.",
       "inputSchema": {
         "properties": {},
-        "type": "object",
-        "title": "pio_monitor_listArguments"
+        "title": "pio_monitor_listArguments",
+        "type": "object"
       }
     },
     {
@@ -664,8 +720,8 @@
             "type": "integer"
           }
         },
-        "type": "object",
-        "title": "pio_monitor_captureArguments"
+        "title": "pio_monitor_captureArguments",
+        "type": "object"
       }
     },
     {
@@ -749,8 +805,8 @@
             "type": "boolean"
           }
         },
-        "type": "object",
-        "title": "pio_testArguments"
+        "title": "pio_testArguments",
+        "type": "object"
       }
     },
     {
@@ -817,8 +873,8 @@
             "title": "Tool"
           }
         },
-        "type": "object",
-        "title": "pio_checkArguments"
+        "title": "pio_checkArguments",
+        "type": "object"
       }
     },
     {
@@ -844,8 +900,8 @@
         "required": [
           "query"
         ],
-        "type": "object",
-        "title": "pio_pkg_searchArguments"
+        "title": "pio_pkg_searchArguments",
+        "type": "object"
       }
     },
     {
@@ -890,8 +946,8 @@
         "required": [
           "spec"
         ],
-        "type": "object",
-        "title": "pio_pkg_installArguments"
+        "title": "pio_pkg_installArguments",
+        "type": "object"
       }
     },
     {
@@ -936,8 +992,8 @@
         "required": [
           "spec"
         ],
-        "type": "object",
-        "title": "pio_pkg_uninstallArguments"
+        "title": "pio_pkg_uninstallArguments",
+        "type": "object"
       }
     },
     {
@@ -970,8 +1026,8 @@
             "title": "Env"
           }
         },
-        "type": "object",
-        "title": "pio_pkg_listArguments"
+        "title": "pio_pkg_listArguments",
+        "type": "object"
       }
     },
     {
@@ -1004,8 +1060,8 @@
             "title": "Env"
           }
         },
-        "type": "object",
-        "title": "pio_pkg_outdatedArguments"
+        "title": "pio_pkg_outdatedArguments",
+        "type": "object"
       }
     },
     {
@@ -1038,8 +1094,8 @@
             "title": "Env"
           }
         },
-        "type": "object",
-        "title": "pio_pkg_updateArguments"
+        "title": "pio_pkg_updateArguments",
+        "type": "object"
       }
     },
     {
@@ -1101,8 +1157,8 @@
             "type": "boolean"
           }
         },
-        "type": "object",
-        "title": "pio_decode_backtraceArguments"
+        "title": "pio_decode_backtraceArguments",
+        "type": "object"
       }
     },
     {
@@ -1152,8 +1208,8 @@
             "title": "Filter"
           }
         },
-        "type": "object",
-        "title": "pio_size_reportArguments"
+        "title": "pio_size_reportArguments",
+        "type": "object"
       }
     },
     {
@@ -1252,8 +1308,542 @@
             "type": "number"
           }
         },
-        "type": "object",
-        "title": "pio_flash_and_verifyArguments"
+        "title": "pio_flash_and_verifyArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_upload_ota",
+      "description": "Flash firmware over Wi-Fi to an ESP32/ESP8266 running ArduinoOTA (espota). Give `host` (IP or name.local); port defaults to 3232 (ESP32) / 8266 (ESP8266) and `auth` is the ArduinoOTA password. By default it resolves and pings the host first, then runs `pio run -t upload --upload-port <host>` so the image matches the current build; build=false sends the existing .pio/build/<env>/firmware.bin with espota.py directly. filesystem=true sends the SPIFFS/LittleFS image instead. Failures are mapped to what to fix: no_response (ArduinoOTA.handle not running), auth_failed, no_callback (firewall), device_rejected (partition table has no OTA slot). Blocked under build_only/read_only policy.",
+      "inputSchema": {
+        "properties": {
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Port"
+          },
+          "auth": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Auth"
+          },
+          "filesystem": {
+            "default": false,
+            "title": "Filesystem",
+            "type": "boolean"
+          },
+          "build": {
+            "default": true,
+            "title": "Build",
+            "type": "boolean"
+          },
+          "timeout_s": {
+            "default": 180,
+            "title": "Timeout S",
+            "type": "number"
+          },
+          "verify_reachable": {
+            "default": true,
+            "title": "Verify Reachable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "host"
+        ],
+        "title": "pio_upload_otaArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_partition_table",
+      "description": "Validate the ESP32 flash layout before it bites. Reads the partition CSV the env uses (board_build.partitions, project partitions.csv, or the Arduino framework default), checks alignment, overlaps, fit against the chip's flash size, OTA slot/otadata consistency, nvs/coredump presence, whether the built firmware.bin fits the smallest app slot, and whether the build dir's partitions.bin is stale. With read_device=true it also reads the live table at 0x8000 over serial (esptool) and diffs it against the CSV, catching the silent-corruption case where an app-only flash left an old table on the chip. Returns partitions plus issues with fixes.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "read_device": {
+            "default": false,
+            "title": "Read Device",
+            "type": "boolean"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Port"
+          }
+        },
+        "title": "pio_partition_tableArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_coredump",
+      "description": "Pull the ESP32 core dump out of the coredump flash partition after a crash (esptool read_flash) and save it. When the optional esp-coredump analyzer is installed (`platformio.mcp[coredump]`), it runs `esp-coredump info_corefile` against the env's firmware.elf with the toolchain's gdb and returns the crashed task, reason, registers, and backtrace. Reports clearly when the partition is erased (no crash recorded) or the analyzer is missing. Stop monitor sessions on the port first.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Port"
+          },
+          "out_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Out Path"
+          },
+          "analyze": {
+            "default": true,
+            "title": "Analyze",
+            "type": "boolean"
+          }
+        },
+        "title": "pio_coredumpArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_power_profile",
+      "description": "Measure the device's current draw for `seconds` and report average/min/max/p95 mA, energy (mWh and µAh when voltage is known), a bucketed timeline, the share of time in sleep vs active (threshold auto-detected from the two dominant current levels, or `sleep_threshold_ma`), and a battery-life estimate. source='serial' reads a meter streaming readings on `port` (INA219/INA226 sketch, USB power meter log; `pattern` regex with (?P<value>) and optional (?P<unit>)/(?P<voltage>) groups, default: first number with uA/mA/A). source='ppk2' drives a Nordic Power Profiler Kit II (needs the `power` extra). Set `trigger` + `trigger_session_id` to start measuring when the firmware prints a line.",
+      "inputSchema": {
+        "properties": {
+          "source": {
+            "default": "serial",
+            "title": "Source",
+            "type": "string"
+          },
+          "seconds": {
+            "default": 10,
+            "title": "Seconds",
+            "type": "number"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Port"
+          },
+          "baud": {
+            "default": 115200,
+            "title": "Baud",
+            "type": "integer"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pattern"
+          },
+          "voltage_mv": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Voltage Mv"
+          },
+          "trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Trigger"
+          },
+          "trigger_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Trigger Session Id"
+          },
+          "buckets": {
+            "default": 20,
+            "title": "Buckets",
+            "type": "integer"
+          },
+          "sleep_threshold_ma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sleep Threshold Ma"
+          }
+        },
+        "title": "pio_power_profileArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_deps_check",
+      "description": "Audit the project's library dependencies before they bite: compares lib_deps against what is installed in .pio/libdeps/<env>, lib/, and lib_extra_dirs, and reports name collisions (two libraries with the same name, where lib_deps order silently decides which one wins), unpinned specs, declared-but-missing and leftover libraries, and circular dependencies between manifests. build=true also runs `pio run` and returns the LDF dependency graph as a tree, flagging a RecursionError as a cycle. Each issue carries a severity, message, and a concrete fix.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "build": {
+            "default": false,
+            "title": "Build",
+            "type": "boolean"
+          }
+        },
+        "title": "pio_deps_checkArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_memory_watch",
+      "description": "Watch serial output for heap and stack telemetry and diagnose leaks, fragmentation, and stack headroom. Give session_id of an open monitor session (its buffer plus `seconds` more) or a port for a one-shot capture. Understands Arduino-ESP32 'Free heap: N min: N largest: N', ESP.getFreeHeap() prints, ESP-IDF heap_caps_print_heap_info blocks, FreeRTOS vTaskList tables, and uxTaskGetStackHighWaterMark lines; `pattern` (regex with a (?P<value>) group) adds a custom metric. Returns per-metric min/max/trend with a stable/shrinking/growing verdict, a per-task stack table flagged below stack_warn_bytes, and a fragmentation hint. When the firmware prints nothing usable, instrumentation_hint has copy-paste snippets.",
+      "inputSchema": {
+        "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Port"
+          },
+          "baud": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baud"
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "seconds": {
+            "default": 15,
+            "title": "Seconds",
+            "type": "number"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pattern"
+          },
+          "stack_warn_bytes": {
+            "default": 512,
+            "title": "Stack Warn Bytes",
+            "type": "integer"
+          },
+          "max_lines": {
+            "default": 5000,
+            "title": "Max Lines",
+            "type": "integer"
+          }
+        },
+        "title": "pio_memory_watchArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_debug_start",
+      "description": "Open a live gdb session on the board through its debug probe (`pio debug --interface=gdb`, GDB/MI over pipes): starts the debug server (OpenOCD, J-Link, ST-Link, esp-prog, ...) from `debug_tool` in platformio.ini, builds a debug firmware, loads it (load=true) and halts at `debug_init_break` (default: main). Returns session_id, the .pioinit script PlatformIO generated, and the initial stop frame. The session holds the probe: stop it (pio_debug_stop) before pio_upload or pio_flash_and_verify. Blocked under build_only/read_only policy.",
+      "inputSchema": {
+        "properties": {
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "load": {
+            "default": true,
+            "title": "Load",
+            "type": "boolean"
+          },
+          "timeout_s": {
+            "default": 90,
+            "title": "Timeout S",
+            "type": "number"
+          }
+        },
+        "title": "pio_debug_startArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_debug_cmd",
+      "description": "Send one gdb command to an open debug session and get its output back, parsed from GDB/MI: `bt`, `p var`, `p/x reg`, `info locals`, `info registers`, `x/16xw addr`, `break src/main.cpp:42`, `watch counter`, `next`, `step`, `finish`, `continue`, `monitor reset halt`, or raw MI such as `-stack-list-frames`. Execution commands (continue/next/step/finish) block until the target stops again or timeout_s passes; on timeout the target keeps running and `interrupt` halts it. Returns result_class, console lines, error, and stopped {reason, frame{function,file,line}}.",
+      "inputSchema": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "command": {
+            "title": "Command",
+            "type": "string"
+          },
+          "timeout_s": {
+            "default": 30,
+            "title": "Timeout S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "session_id",
+          "command"
+        ],
+        "title": "pio_debug_cmdArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_debug_stop",
+      "description": "Quit gdb and the debug server, resume the target, and free the probe so pio_upload works again.",
+      "inputSchema": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "pio_debug_stopArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_debug_list",
+      "description": "List open debug sessions with env, debug tool, running/halted state, and the last stop frame.",
+      "inputSchema": {
+        "properties": {},
+        "title": "pio_debug_listArguments",
+        "type": "object"
       }
     }
   ]

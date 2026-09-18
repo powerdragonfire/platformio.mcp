@@ -12,3 +12,6 @@ wheels/
 .venv/
 *.egg-info/
 .pytest_cache/
+
+# Agent worktrees
+.claude/worktrees/
