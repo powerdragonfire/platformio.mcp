@@ -312,3 +312,167 @@ def parse_dependency_graph(text: str) -> list[dict]:
 
 def has_recursion_error(text: str) -> bool:
     return bool(RECURSION_RE.search(text))
+# --- runtime memory telemetry (free heap, stack high-water marks) ------------------------------
+
+_NUM = r"(?P<value>\d+)\s*(?P<unit>KiB|KB|kB|MB|bytes?|B|words?)?\b"
+_SEP = r"\s*(?:[:=]|\bis\b)?\s*"
+HEAP_METRIC_RES: list[tuple[str, re.Pattern[str]]] = [
+    ("min_free_heap", re.compile(r"(?:min(?:imum)?[\s_.]*free[\s_]*(?:internal[\s_]*)?heap(?:[\s_]*size)?|free[\s_]*heap[\s_]*min(?:imum)?|lowest[\s_]*free[\s_]*heap|ESP\.getMinFreeHeap\(\)|esp_get_minimum_free_heap_size\(\)|minFreeHeap|min_free(?![\s_]*block))" + _SEP + _NUM, re.I)),
+    ("largest_free_block", re.compile(r"(?:largest[\s_]*free[\s_]*block|largest[\s_]*(?:free[\s_]*)?(?:block|alloc(?:atable)?)|max(?:imum)?[\s_]*alloc(?:atable)?(?:[\s_]*heap|[\s_]*block|[\s_]*size)?|ESP\.getMaxAllocHeap\(\)|maxAllocHeap|biggest[\s_]*free[\s_]*block)" + _SEP + _NUM, re.I)),
+    ("psram_free", re.compile(r"(?:free[\s_]*psram|psram[\s_]*free|ESP\.getFreePsram\(\)|freePsram|free_psram)" + _SEP + _NUM, re.I)),
+    ("allocated", re.compile(r"(?:allocated(?:[\s_]*heap)?|heap[\s_]*used|used[\s_]*heap)" + _SEP + _NUM, re.I)),
+    ("free_heap", re.compile(r"(?:free[\s_]*(?:internal[\s_]*|dram[\s_]*)?heap(?:[\s_]*size)?|heap[\s_]*free|ESP\.getFreeHeap\(\)|esp_get_free_heap_size\(\)|freeHeap|free_heap|\bheap)" + _SEP + _NUM, re.I)),
+]
+# Trailing "min: N largest: N" on a line that already reported free heap (the Arduino snippet in the hint).
+HEAP_TRAILER_RES: list[tuple[str, re.Pattern[str]]] = [
+    ("min_free_heap", re.compile(r"\bmin" + _SEP + _NUM, re.I)),
+    ("largest_free_block", re.compile(r"\blargest" + _SEP + _NUM, re.I)),
+]
+STACK_RES: list[re.Pattern[str]] = [
+    # "loopTask: stack hwm 1234", "Stack HWM for loopTask: 1234 bytes", "uxTaskGetStackHighWaterMark(NULL) = 812"
+    re.compile(r"(?:(?P<task>[\w.-]+)\s*[:\-]\s*)?(?:stack[\s_]*(?:hwm|high[\s_-]*water[\s_-]*mark|free|headroom|remaining|left)|high[\s_-]*water[\s_-]*mark|uxTaskGetStackHighWaterMark(?:\((?P<arg>[^)]*)\))?)(?:\s*(?:for|of)\s+(?P<task2>[\w.-]+))?(?:\s*\((?P<task3>[^)]+)\))?" + _SEP + _NUM, re.I),
+    # "loopTask: 1234 bytes free"
+    re.compile(r"^\s*(?P<task>[\w.-]+)\s*[:=]\s*" + _NUM + r"\s*(?:free|left|remaining)\b", re.I),
+]
+VTASKLIST_HEADER_RE = re.compile(r"\bname\s+state\s+prio(?:rity)?\s+stack\s+(?:num|#|task\s*num(?:ber)?)", re.I)
+VTASKLIST_ROW_RE = re.compile(r"^\s*(?P<name>\S+)\s+(?P<state>[XRBSD])\s+(?P<prio>\d+)\s+(?P<stack>\d+)\s+(?P<num>\d+)\b")
+HEAP_SUMMARY_RE = re.compile(r"heap summary for capabilities", re.I)
+HEAP_TOTALS_RE = re.compile(r"^\s*totals\s*:", re.I)
+HEAP_TOTALS_LINE_RE = re.compile(r"\bfree\s+(?P<free>\d+)\s+allocated\s+(?P<allocated>\d+)(?:\s+min_free\s+(?P<min_free>\d+))?(?:\s+largest_free_block\s+(?P<largest>\d+))?", re.I)
+HEAP_REGION_LINE_RE = re.compile(r"^(?:at 0x|largest_free_block\b|alloc_blocks\b)", re.I)
+GENERIC_MEM_RE = re.compile(r"(?P<name>(?:[A-Za-z_][\w .-]{0,40}?)?(?:heap|stack|psram)[\w .-]{0,30}?)\s*[:=]\s*" + _NUM, re.I)
+UNIT_FACTORS = {"kib": 1024, "kb": 1024, "mb": 1024 * 1024, "word": 4, "words": 4}
+NON_STACK_TASK_RE = re.compile(r"heap|psram|dram|iram", re.I)
+
+
+def _to_bytes(value: str, unit: str | None) -> tuple[int, str | None]:
+    n = int(value)
+    u = (unit or "").lower()
+    factor = UNIT_FACTORS.get(u)
+    if factor:
+        return n * factor, u
+    return n, (u or None)
+
+
+def _slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_") or "value"
+
+
+def parse_memory_telemetry(lines: list[str], pattern: str | None = None) -> dict:
+    """Pull heap / stack telemetry out of serial output.
+
+    Returns {"samples": [...], "series": {metric: [values]}, "tasks": {task: [stack_free_bytes]},
+    "formats": [names of the formats seen], "recognized": bool}. Sample order follows line order;
+    every sample carries the index of the line it came from.
+    """
+    custom = re.compile(pattern) if pattern else None
+    if custom is not None and "value" not in custom.groupindex:
+        raise ValueError("pattern must define a named group (?P<value>...) and may define (?P<name>...)")
+    samples: list[dict] = []
+    series: dict[str, list[int]] = {}
+    tasks: dict[str, list[int]] = {}
+    formats: set[str] = set()
+    in_summary = False
+    after_totals = False
+    in_tasklist = False
+
+    def add(metric: str, value: int, idx: int, raw: str, fmt: str, unit: str | None = None) -> None:
+        samples.append({"metric": metric, "value": value, "line": idx, "task": None, "unit": unit, "raw": raw.strip()[:160]})
+        series.setdefault(metric, []).append(value)
+        formats.add(fmt)
+
+    def add_stack(task: str | None, value: int, idx: int, raw: str, fmt: str, unit: str | None) -> None:
+        task = (task or "unknown").strip()
+        samples.append({"metric": "stack_free", "value": value, "line": idx, "task": task, "unit": unit, "raw": raw.strip()[:160]})
+        tasks.setdefault(task, []).append(value)
+        formats.add(fmt)
+
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            in_tasklist = False
+            continue
+        # ESP-IDF heap_caps_print_heap_info block: only the Totals line counts, per-region lines are skipped.
+        if HEAP_SUMMARY_RE.search(stripped):
+            in_summary, after_totals = True, False
+            continue
+        if in_summary:
+            if HEAP_TOTALS_RE.match(stripped):
+                after_totals = True
+                continue
+            m = HEAP_TOTALS_LINE_RE.search(stripped)
+            if m and after_totals:
+                add("free_heap", int(m["free"]), idx, line, "esp_idf_heap_info")
+                add("allocated", int(m["allocated"]), idx, line, "esp_idf_heap_info")
+                if m["min_free"]:
+                    add("min_free_heap", int(m["min_free"]), idx, line, "esp_idf_heap_info")
+                if m["largest"]:
+                    add("largest_free_block", int(m["largest"]), idx, line, "esp_idf_heap_info")
+                in_summary, after_totals = False, False
+                continue
+            if m or HEAP_REGION_LINE_RE.match(stripped):
+                continue
+            in_summary, after_totals = False, False
+        # FreeRTOS vTaskList table: rows are only trusted after a header line.
+        if VTASKLIST_HEADER_RE.search(stripped):
+            in_tasklist = True
+            continue
+        if in_tasklist:
+            m = VTASKLIST_ROW_RE.match(line)
+            if m:
+                add_stack(m["name"], int(m["stack"]), idx, line, "vtasklist", None)
+                samples[-1].update({"state": m["state"], "priority": int(m["prio"]), "task_number": int(m["num"])})
+                continue
+            if set(stripped) <= {"-", "=", " "}:
+                continue
+            in_tasklist = False
+        consumed: list[tuple[int, int]] = []
+
+        def unclaimed(span: tuple[int, int], taken: list[tuple[int, int]] = consumed) -> bool:
+            return all(span[1] <= a or span[0] >= b for a, b in taken)
+
+        if custom is not None:
+            for m in custom.finditer(line):
+                name = _slug(m.groupdict().get("name") or "custom")
+                value, unit = _to_bytes(m["value"], m.groupdict().get("unit"))
+                add(name, value, idx, line, "custom", unit)
+                consumed.append(m.span())
+        matched_stack = False
+        for rx in STACK_RES:
+            for m in rx.finditer(line):
+                if not unclaimed(m.span()):
+                    continue
+                gd = m.groupdict()
+                arg = gd.get("arg")
+                task = gd.get("task") or gd.get("task2") or gd.get("task3") or (arg if arg and arg.strip().upper() != "NULL" else None)
+                if task and NON_STACK_TASK_RE.search(task):
+                    continue
+                value, unit = _to_bytes(m["value"], m["unit"])
+                add_stack(task, value, idx, line, "stack_hwm", unit)
+                consumed.append(m.span())
+                matched_stack = True
+        matched_heap = False
+        for metric, rx in HEAP_METRIC_RES:
+            for m in rx.finditer(line):
+                if not unclaimed(m.span()):
+                    continue
+                value, unit = _to_bytes(m["value"], m["unit"])
+                add(metric, value, idx, line, "heap_line", unit)
+                consumed.append(m.span())
+                matched_heap = True
+        if matched_heap:
+            for metric, rx in HEAP_TRAILER_RES:
+                for m in rx.finditer(line):
+                    if unclaimed(m.span()):
+                        value, unit = _to_bytes(m["value"], m["unit"])
+                        add(metric, value, idx, line, "heap_line", unit)
+                        consumed.append(m.span())
+        if matched_heap or matched_stack:
+            continue
+        for m in GENERIC_MEM_RE.finditer(line):
+            if not unclaimed(m.span()):
+                continue
+            value, unit = _to_bytes(m["value"], m["unit"])
+            add(_slug(m["name"]), value, idx, line, "generic", unit)
+            consumed.append(m.span())
+    return {"samples": samples, "series": series, "tasks": tasks, "formats": sorted(formats), "recognized": bool(samples)}
