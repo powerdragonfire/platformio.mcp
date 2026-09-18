@@ -1,0 +1,43 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/platformio.mcp/
+    permissions:
+      id-token: write # OIDC trusted publishing; no PyPI token stored in the repo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --group dev
+
+      - name: Verify pyproject.toml version matches the release tag
+        if: github.event_name == 'release'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::release tag v$tag does not match pyproject.toml version $pkg"
+            exit 1
+          fi
+
+      - run: uv run pytest -q
+      - run: uv build
+      - run: uvx --from dist/*.whl platformio.mcp --version
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
