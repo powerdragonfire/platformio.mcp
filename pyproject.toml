@@ -1,6 +1,6 @@
 [project]
 name = "platformio.mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server that lets AI coding agents drive PlatformIO: boards, projects, build, flash, serial monitor, tests, static analysis, libraries."
 readme = "README.md"
 license = "MIT"
