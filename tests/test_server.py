@@ -15,6 +15,7 @@ EXPECTED_TOOLS = {
     "pio_upload_ota",
     "pio_partition_table", "pio_coredump",
     "pio_power_profile",
+    "pio_memory_watch",
 }
 
 

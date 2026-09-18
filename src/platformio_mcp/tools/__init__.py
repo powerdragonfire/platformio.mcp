@@ -1,6 +1,6 @@
-from . import analysis, build, deps, devices, flash, ota, packages, power, project, quality, system
+from . import analysis, build, deps, devices, flash, ota, packages, power, project, quality, runtime, system
 
-MODULES = (system, project, build, devices, quality, packages, analysis, ota, flash, power, deps)
+MODULES = (system, project, build, devices, quality, packages, analysis, ota, flash, power, deps, runtime)
 
 
 def register_all(mcp) -> None:
