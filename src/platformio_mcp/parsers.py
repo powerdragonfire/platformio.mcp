@@ -204,3 +204,111 @@ def summarize_check_report(report: list[dict], project_dir: str | None = None) -
     order = {"high": 0, "medium": 1, "low": 2}
     defects.sort(key=lambda d: (order.get(d["severity"], 3), d["file"], d["line"] or 0))
     return {"defect_count": len(defects), "by_severity": by_severity, "tools": tools, "defects": defects}
+
+
+# --- library dependencies ---------------------------------------------------------------
+
+DEP_GRAPH_LINE_RE = re.compile(r"^(?P<indent>(?:\|   |    )*)[|+\\]-- (?P<name>.+?)(?: @ (?P<version>[^\s(]+))?(?: \((?P<path>.*)\))?\s*$")
+URL_SCHEME_RE = re.compile(r"^(?:git\+)?(?:https?|ssh|git|file|symlink)://|^git@[^:]+:", re.I)
+RECURSION_RE = re.compile(r"RecursionError|maximum recursion depth exceeded", re.I)
+
+
+def parse_lib_spec(spec: str) -> dict:
+    """Split one `lib_deps` entry into owner, name, version/ref, url, and kind.
+
+    Handles `Name`, `owner/Name@^1.2`, `Name@1.2.3`, `Name=<url>`, `https://.../repo.git#tag`,
+    `git@host:owner/repo.git`, `file://` and `symlink://` paths, and bare registry ids.
+    """
+    raw = spec.strip()
+    out = {"spec": raw, "owner": None, "name": None, "version": None, "url": None, "kind": "registry", "pinned": False}
+    if not raw:
+        out["kind"] = "empty"
+        return out
+    alias = None
+    body = raw
+    if "=" in raw and URL_SCHEME_RE.search(raw.split("=", 1)[1].strip()):
+        alias, body = (p.strip() for p in raw.split("=", 1))
+    if URL_SCHEME_RE.search(body):
+        url, ref = body, None
+        if "#" in url:
+            url, ref = url.split("#", 1)
+        elif re.search(r"\.git@[^/]+$", url):
+            url, ref = url.rsplit("@", 1)
+        base = url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+        base = re.sub(r"\.(git|zip|tar\.gz|tgz)$", "", base, flags=re.I)
+        local = url.lower().startswith(("file://", "symlink://"))
+        out.update(name=alias or base or None, version=ref, url=url, kind="local" if local else "url", pinned=bool(ref) or local)
+        return out
+    if body.isdigit():
+        out.update(name=body, kind="id")
+        return out
+    version = None
+    if "@" in body:
+        body, version = body.split("@", 1)
+        version = version.strip() or None
+    owner = None
+    if "/" in body:
+        owner, body = body.rsplit("/", 1)
+    out.update(owner=owner.strip() if owner else None, name=body.strip() or None, version=version, pinned=version is not None)
+    return out
+
+
+def parse_library_properties(text: str) -> dict:
+    """Parse an Arduino `library.properties` file into name, version, and dependency names."""
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        fields[k.strip().lower()] = v.strip()
+    deps = []
+    for item in fields.get("depends", "").split(","):
+        name = re.sub(r"\s*\(.*\)\s*$", "", item).strip()
+        if name:
+            deps.append(name)
+    return {"name": fields.get("name"), "version": fields.get("version"), "dependencies": deps}
+
+
+def library_json_dependencies(manifest: dict) -> list[str]:
+    """Names from a `library.json` `dependencies` field in any of its three shapes."""
+    deps = manifest.get("dependencies")
+    names: list[str] = []
+    if isinstance(deps, dict):
+        names = [re.sub(r"^[^/]+/", "", k) for k in deps]
+    elif isinstance(deps, list):
+        for d in deps:
+            if isinstance(d, str):
+                names.append(parse_lib_spec(d)["name"] or d)
+            elif isinstance(d, dict) and d.get("name"):
+                names.append(str(d["name"]))
+    return [n for n in names if n]
+
+
+def parse_dependency_graph(text: str) -> list[dict]:
+    """Parse the LDF 'Dependency Graph' tree printed by `pio run` into nested nodes."""
+    roots: list[dict] = []
+    stack: list[tuple[int, dict]] = []
+    in_graph = False
+    for line in text.split("\n"):
+        if line.strip() == "Dependency Graph":
+            in_graph = True
+            continue
+        if not in_graph:
+            continue
+        m = DEP_GRAPH_LINE_RE.match(line)
+        if not m:
+            if line.strip():
+                in_graph = False
+            continue
+        depth = len(m["indent"]) // 4
+        node = {"name": m["name"].strip(), "version": m["version"], "path": m["path"], "children": []}
+        while stack and stack[-1][0] >= depth:
+            stack.pop()
+        (stack[-1][1]["children"] if stack else roots).append(node)
+        stack.append((depth, node))
+    return roots
+
+
+def has_recursion_error(text: str) -> bool:
+    return bool(RECURSION_RE.search(text))
