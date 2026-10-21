@@ -46,6 +46,33 @@ The `platformio` MCP server gives you hands on the board. Use its tools instead 
 
 - `pio_pkg_search(query)` then `pio_pkg_install(spec, project_dir, env)`. This edits `platformio.ini` for you; do not edit `lib_deps` by hand as well.
 
+## Port problems
+
+- `upload_failed` with `port_error` set: read `port_diagnosis.hint`. If `held_by_session`, retry with `stop_open_sessions=true`; if `held_by_processes`, ask the user to close that program; `no_response` means the board is not in bootloader mode.
+- `pio_port_diagnose(port)` answers the same question before flashing.
+
+## Over-the-air
+
+- Board on Wi-Fi with ArduinoOTA in the sketch: `pio_upload_ota(host="<ip or name.local>", auth="<password>")`. `no_response` means `ArduinoOTA.handle()` is not running; `device_rejected` means the partition table has no OTA slot, so run `pio_partition_table`.
+
+## ESP32 flash layout and core dumps
+
+- Before changing `board_build.partitions`, or when a flash succeeds but the device misbehaves: `pio_partition_table(project_dir, env, read_device=true)`. Fix `issues` in severity order; `device_table_mismatch` is fixed by a full `pio_upload`, never by `pio_run_target("program")`.
+- Crash with no backtrace on serial: `pio_coredump(project_dir, env)`; with the `coredump` extra installed the result already holds the crashed task and backtrace.
+
+## Runtime memory and power
+
+- Suspected leak, fragmentation, or stack overflow: keep a monitor session open and call `pio_memory_watch(session_id, seconds=30)`. `leak_suspected` and the per-task `stack` table tell you what to fix; if `formats` is empty, add the `instrumentation_hint` snippet to the firmware and flash again.
+- Battery budget: `pio_power_profile(source="serial" | "ppk2", seconds=30, voltage_mv=3300)`; use `trigger` with the firmware's monitor `session_id` to start at a known point.
+
+## Dependencies
+
+- Odd link errors, wrong library version picked, or LDF recursion: `pio_deps_check(project_dir, env, build=true)`. `name_collision` is resolved by pinning `owner/Name@version` or deleting the duplicate; never by reordering `lib_deps` alone.
+
+## Live debugging
+
+- When prints are not enough and a debug probe is attached: `pio_debug_start(project_dir, env)` (flashes and halts at the init break), then `pio_debug_cmd(session_id, "break src/main.cpp:42")`, `"continue"`, `"bt"`, `"p variable"`, `"next"`. `continue` blocks until a stop or `timeout_s`; send `"interrupt"` to halt a running target. `pio_debug_stop` before any flash.
+
 ## Policy
 
 If a tool returns `error: "policy_denied"`, the server runs with `PLATFORMIO_MCP_POLICY=build_only` or `read_only`. Tell the user which action was blocked and do not try to work around it.

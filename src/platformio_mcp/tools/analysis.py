@@ -201,7 +201,11 @@ def pio_flash_and_verify(
     up = pio_upload(project_dir=str(path), env=env, upload_port=upload_port or port)
     upload_s = round(time.monotonic() - t0, 2)
     if not up.get("ok"):
-        return {"ok": False, "verdict": "upload_failed", "summary": "Upload failed, nothing verified. " + up.get("summary", ""), "port": port, "baud": baud, "upload": up}
+        failed: dict[str, Any] = {"ok": False, "verdict": "upload_failed", "summary": "Upload failed, nothing verified. " + up.get("summary", ""), "port": port, "baud": baud, "upload": up}
+        if up.get("port_error"):
+            failed["error"] = up["error"]
+            failed["port_diagnosis"] = up.get("port_diagnosis")
+        return failed
     combined = f"(?P<pass_>{expect})|(?P<fail_>{fail_on})" if fail_on else f"(?P<pass_>{expect})"
     rx = re.compile(combined)
     s = monitors.start(port, baud)

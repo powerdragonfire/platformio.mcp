@@ -1,6 +1,6 @@
 [project]
 name = "platformio.mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server that lets AI coding agents drive PlatformIO: boards, projects, build, flash, serial monitor, tests, static analysis, libraries."
 readme = "README.md"
 license = "MIT"
@@ -17,13 +17,17 @@ classifiers = [
     "Topic :: Software Development :: Embedded Systems",
 ]
 dependencies = [
-    "mcp>=1.0",
+    "mcp>=2.2",
     "pyserial>=3.5",
 ]
 
 [project.optional-dependencies]
 # `uvx "platformio.mcp[platformio]"` brings PlatformIO Core along for machines that have never installed it.
 platformio = ["platformio>=6.1"]
+# `uvx "platformio.mcp[coredump]"` adds the esp-coredump analyzer that pio_coredump runs on a retrieved dump.
+coredump = ["esp-coredump>=1.10"]
+# `uvx "platformio.mcp[power]"` adds the Nordic Power Profiler Kit II driver for pio_power_profile(source="ppk2").
+power = ["ppk2-api"]
 
 [project.urls]
 Homepage = "https://github.com/powerdragonfire/platformio.mcp"
@@ -37,7 +41,7 @@ platformio-mcp = "platformio_mcp.cli:main"
 module-name = "platformio_mcp"
 
 [build-system]
-requires = ["uv_build>=0.11.6,<0.12.0"]
+requires = ["uv_build>=0.11.6,<0.13.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
