@@ -10,6 +10,7 @@ from mcp.server.mcpserver import MCPServer
 from . import __version__
 from .core import monitors, policy
 from .debugger import debuggers
+from .tools.hardware import test_plan_runs
 from .tools import register_all
 
 INSTRUCTIONS = """PlatformIO MCP gives you hands on embedded hardware through the PlatformIO CLI.
@@ -27,6 +28,8 @@ pio_coredump after a crash to pull and decode the core dump. pio_memory_watch tu
 stack-headroom verdicts; pio_power_profile measures current from a serial meter or a PPK2. pio_deps_check audits lib_deps
 for name collisions and cycles. pio_upload_ota flashes over Wi-Fi. pio_debug_start opens a GDB session through the
 debug probe; drive it with pio_debug_cmd (bt, break, next, continue, p var) and stop it before flashing.
+For repeatable hardware checks use pio_test_plan_validate/start/status/cancel with a declarative JSON plan;
+it records per-iteration pass/fail/timeout/infra_error outcomes, evidence logs, and firmware/source identity.
 """
 
 
@@ -37,6 +40,7 @@ async def lifespan(server: MCPServer) -> AsyncIterator[None]:
     finally:
         monitors.stop_all()
         debuggers.stop_all()
+        test_plan_runs.stop_all()
 
 
 def create_server() -> MCPServer:

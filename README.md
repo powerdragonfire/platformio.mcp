@@ -158,6 +158,7 @@ Every tool returns `ok`, a one-paragraph `summary` written for the model, struct
 | | What it does | Under the hood |
 |---|---|---|
 | 🚀 **`pio_flash_and_verify`** | Flash, open the port, read until `expect` matches (**pass**), a crash signature matches (**fail**, auto-decoded), or the timeout passes (**timeout**) | `pio run -t upload` + pyserial; `fail_on` defaults to Guru Meditation, HardFault, `abort()`, `assert failed`, watchdog, brownout, heap corruption |
+| 🔁 **`pio_test_plan_*`** | Run a declarative hardware test plan for N iterations with cancellation, per-iteration verdicts (`pass`/`fail`/`timeout`/`infra_error`), and evidence logs | Reuses upload + serial monitor tools, continues observing for a post-success window, and writes machine-readable reports with source+firmware identity |
 | 🩺 **`pio_decode_backtrace`** | Turn an ESP32 `Backtrace: 0x400d...` dump or a Cortex-M `pc`/`lr` dump into function, file, line, inlined frames, cause, reset reason | Toolchain located from `pio project metadata`, then `<target>-addr2line -pfiaC` on `firmware.elf`; fixes Xtensa `A0` window bits |
 | 📊 **`pio_size_report`** | Why is the firmware this big? Flash/RAM %, loaded sections, biggest symbols with `file:line`, per-file totals, regex `filter` | `pio run -t checkprogsize` (partition-aware) + GNU `size -A` + `nm -S -C -l --size-sort` |
 | 💾 **`pio_partition_table`** | Catch the silent ESP32 corruption where an app-only flash leaves an old partition table on the chip; alignment, overlap, OTA slot, and app-fit checks | Parses the env's partition CSV; `read_device=true` reads 0x8000 with `esptool read_flash` and diffs |
@@ -168,6 +169,43 @@ Every tool returns `ok`, a one-paragraph `summary` written for the model, struct
 | 🌐 **`pio_upload_ota`** | Flash over Wi-Fi with failures mapped to the fix (wrong password, no `ArduinoOTA.handle()`, firewall, no OTA slot) | `pio run -t upload --upload-port <ip>` (espota auto-switch) or `espota.py` directly |
 | 🔌 **`pio_port_diagnose`** | Why the upload cannot open the port: our session, another process, permissions, or a board not in bootloader mode | `lsof`/`fuser` + `pio device list`; never kills anything |
 | 📚 **`pio_deps_check`** | Library name collisions where `lib_deps` order silently picks the winner, unpinned specs, leftovers, cycles | Manifests in `.pio/libdeps` and `lib/`, plus the LDF dependency graph with `build=true` |
+
+## 🔁 Repeatable hardware test plans
+
+Use declarative JSON plans when you need reproducible board validation over many iterations.
+
+```json
+{
+  "plan_version": 1,
+  "name": "SPI loopback",
+  "project_dir": "/abs/project",
+  "environment": "ch32h4_loopback",
+  "device_identity": "bench-ch32h4-01",
+  "board": { "platformio_env": "ch32h4_loopback", "board_id": "genericCH32H4" },
+  "peripherals": ["SPI loopback"],
+  "pin_mapping": { "SPI_MOSI": "PB15", "SPI_MISO": "PB14" },
+  "fixture": { "required_wiring": ["PB15 to PB14"] },
+  "run": { "iterations": 100, "upload_each_iteration": true, "stop_open_sessions": true },
+  "serial_assertion": {
+    "success_pattern": "SPI_LOOPBACK_OK",
+    "failure_pattern": "panic|HardFault|assert failed|test-failure",
+    "timeout_s": 20,
+    "observation_window_s": 5,
+    "reconnect_attempts": 1
+  }
+}
+```
+
+Workflow:
+
+1. `pio_test_plan_validate(plan_path=...)`
+2. `pio_test_plan_start(plan_path=...)`
+3. poll `pio_test_plan_status(run_id=...)`
+4. optional cancel: `pio_test_plan_cancel(run_id=...)`
+
+Reports include source revision + dirty state, firmware hash, selected env, and detected device identity. Every non-pass iteration stores evidence logs with references in the JSON report.
+
+An end-to-end CH32H4 fixture + firmware example is in [`examples/ch32h4-spi-loopback`](examples/ch32h4-spi-loopback).
 
 ## 🔒 Safety policy
 

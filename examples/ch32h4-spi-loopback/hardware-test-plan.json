@@ -1,0 +1,49 @@
+{
+  "plan_version": 1,
+  "name": "CH32H4 SPI loopback",
+  "project_dir": ".",
+  "environment": "ch32h4_loopback",
+  "device_identity": "bench-ch32h4-01",
+  "board": {
+    "platformio_env": "ch32h4_loopback",
+    "board_id": "genericCH32H4",
+    "notes": "Do not swap boards during a run. Pick one USB serial port and keep it stable."
+  },
+  "peripherals": [
+    "SPI MOSI<->MISO loopback",
+    "USB serial"
+  ],
+  "pin_mapping": {
+    "SPI_MOSI": "PB15",
+    "SPI_MISO": "PB14",
+    "SPI_SCK": "PB13",
+    "SPI_CS": "PB12"
+  },
+  "fixture": {
+    "required_wiring": [
+      "PB15 (MOSI) to PB14 (MISO)",
+      "Common ground through USB power"
+    ],
+    "preflight": [
+      "Use a data USB cable",
+      "Close other serial monitors",
+      "Confirm board enumerates in `pio device list`"
+    ]
+  },
+  "run": {
+    "iterations": 100,
+    "upload_each_iteration": true,
+    "stop_open_sessions": true,
+    "report_dir": "./reports"
+  },
+  "serial_assertion": {
+    "success_pattern": "SPI_LOOPBACK_OK",
+    "failure_pattern": "panic|HardFault|assert failed|test-failure",
+    "timeout_s": 20,
+    "observation_window_s": 5,
+    "max_lines": 1200,
+    "reconnect_attempts": 1,
+    "reconnect_delay_s": 0.5,
+    "baud": 115200
+  }
+}
