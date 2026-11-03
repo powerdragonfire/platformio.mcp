@@ -19,6 +19,9 @@ from .analysis import DEFAULT_FAIL_PATTERN
 from .build import pio_upload
 from .devices import _devices, _pick_port
 
+SUPPORTED_PLAN_VERSION = 1
+MAX_STORED_RUNS = 200
+
 
 def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -26,7 +29,10 @@ def _now() -> str:
 
 def _read_plan(path: str) -> tuple[Path, dict[str, Any]]:
     plan_path = Path(path).expanduser().resolve()
-    data = json.loads(plan_path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(plan_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON in plan file {plan_path}: {exc.msg} at line {exc.lineno}, column {exc.colno}") from exc
     if not isinstance(data, dict):
         raise ValueError("plan must be a JSON object")
     return plan_path, data
@@ -41,6 +47,10 @@ def _normalize_plan(
     iterations: int | None,
     report_dir: str | None,
 ) -> dict[str, Any]:
+    plan_version = int(data.get("plan_version", SUPPORTED_PLAN_VERSION))
+    if plan_version != SUPPORTED_PLAN_VERSION:
+        raise ValueError(f"unsupported plan_version={plan_version}; supported version is {SUPPORTED_PLAN_VERSION}")
+
     run = data.get("run") or {}
     serial = data.get("serial_assertion") or {}
     board = data.get("board") or {}
@@ -67,8 +77,23 @@ def _normalize_plan(
     timeout_s = float(serial.get("timeout_s", 30))
     observation_window_s = float(serial.get("observation_window_s", 2))
     reconnect_attempts = int(serial.get("reconnect_attempts", 0))
+    reconnect_delay_s = float(serial.get("reconnect_delay_s", 0.2))
+    max_lines = int(serial.get("max_lines", 800))
+    baud = serial.get("baud")
+    if baud is not None:
+        baud = int(baud)
     if timeout_s <= 0 or observation_window_s < 0 or reconnect_attempts < 0:
         raise ValueError("timeout_s must be > 0; observation_window_s and reconnect_attempts must be >= 0")
+    if reconnect_delay_s < 0:
+        raise ValueError("reconnect_delay_s must be >= 0")
+    if max_lines < 1:
+        raise ValueError("max_lines must be >= 1")
+    if baud is not None and baud < 1:
+        raise ValueError("baud must be >= 1")
+
+    re.compile(success)
+    if serial.get("failure_pattern"):
+        re.compile(serial["failure_pattern"])
 
     out_dir_raw = report_dir or run.get("report_dir") or str(Path(project) / ".pio-hil-reports")
     out_dir = Path(out_dir_raw).expanduser()
@@ -78,7 +103,7 @@ def _normalize_plan(
         out_dir = out_dir.resolve()
 
     return {
-        "plan_version": int(data.get("plan_version", 1)),
+        "plan_version": plan_version,
         "name": data.get("name") or "hardware-test-plan",
         "project_dir": project,
         "environment": environment,
@@ -94,12 +119,12 @@ def _normalize_plan(
             "failure_pattern": serial.get("failure_pattern", DEFAULT_FAIL_PATTERN),
             "timeout_s": timeout_s,
             "observation_window_s": observation_window_s,
-            "max_lines": int(serial.get("max_lines", 800)),
-            "baud": serial.get("baud"),
+            "max_lines": max_lines,
+            "baud": baud,
             "monitor_port": serial.get("monitor_port"),
             "upload_port": serial.get("upload_port"),
             "reconnect_attempts": reconnect_attempts,
-            "reconnect_delay_s": float(serial.get("reconnect_delay_s", 0.2)),
+            "reconnect_delay_s": reconnect_delay_s,
         },
         "report_dir": str(out_dir),
         "device_identity": data.get("device_identity") or board.get("device_identity"),
@@ -179,9 +204,10 @@ class TestPlanRun:
 
 
 class TestPlanRunManager:
-    def __init__(self) -> None:
+    def __init__(self, max_runs: int = MAX_STORED_RUNS) -> None:
         self._runs: dict[str, TestPlanRun] = {}
         self._lock = threading.Lock()
+        self._max_runs = max(max_runs, 1)
 
     def start(self, plan_path: str, normalized_plan: dict[str, Any]) -> TestPlanRun:
         run_id = uuid.uuid4().hex[:8]
@@ -191,9 +217,21 @@ class TestPlanRunManager:
         run = TestPlanRun(run_id=run_id, plan_path=plan_path, report_path=str(report_path), normalized_plan=normalized_plan)
         with self._lock:
             self._runs[run_id] = run
+            self._prune_completed_locked()
         run.thread = threading.Thread(target=self._execute, args=(run,), name=f"pio-hil-{run_id}", daemon=True)
         run.thread.start()
         return run
+
+    def _prune_completed_locked(self) -> None:
+        overflow = len(self._runs) - self._max_runs
+        if overflow <= 0:
+            return
+        removable = sorted(
+            [r for r in self._runs.values() if r.status in {"completed", "failed", "cancelled"}],
+            key=lambda r: (r.finished_at or "", r.created_at, r.run_id),
+        )
+        for run in removable[:overflow]:
+            self._runs.pop(run.run_id, None)
 
     def get(self, run_id: str) -> TestPlanRun:
         with self._lock:
@@ -237,7 +275,10 @@ class TestPlanRunManager:
                 "device": run.device,
                 "iterations": run.iterations,
             }
-        Path(run.report_path).write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        report = Path(run.report_path)
+        tmp = report.with_suffix(report.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(report)
 
     def _make_summary(self, run: TestPlanRun) -> str:
         done = len(run.iterations)

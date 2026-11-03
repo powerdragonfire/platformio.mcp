@@ -176,3 +176,32 @@ def test_ambiguous_device_selection_is_infra_error(monkeypatch, project):
     rec = done["iterations"][-1]
     assert rec["outcome"] == "infra_error"
     assert rec["error_code"] == "device_ambiguous"
+
+
+def test_validate_rejects_invalid_plan_version_and_regex(project):
+    bad_version = _write_plan(project, plan_version=2)
+    r = hardware.pio_test_plan_validate(str(bad_version))
+    assert r["ok"] is False and "unsupported plan_version" in r["summary"]
+
+    bad_regex = _write_plan(project, serial_assertion={"success_pattern": "("})
+    r = hardware.pio_test_plan_validate(str(bad_regex))
+    assert r["ok"] is False and r["error"] == "bad_regex"
+
+
+def test_validate_rejects_bad_numeric_bounds(project):
+    plan = _write_plan(project, serial_assertion={"max_lines": 0, "baud": 0, "reconnect_delay_s": -1})
+    r = hardware.pio_test_plan_validate(str(plan))
+    assert r["ok"] is False
+    assert "max_lines" in r["summary"] or "baud" in r["summary"] or "reconnect_delay_s" in r["summary"]
+
+
+def test_run_manager_prunes_old_completed_runs():
+    mgr = hardware.TestPlanRunManager(max_runs=2)
+    one = hardware.TestPlanRun(run_id="one", plan_path="/tmp/p1", report_path="/tmp/r1", normalized_plan={"run": {"iterations": 1}}, status="completed", created_at="2026-01-01T00:00:00Z", finished_at="2026-01-01T00:00:01Z")
+    two = hardware.TestPlanRun(run_id="two", plan_path="/tmp/p2", report_path="/tmp/r2", normalized_plan={"run": {"iterations": 1}}, status="completed", created_at="2026-01-01T00:00:02Z", finished_at="2026-01-01T00:00:03Z")
+    three = hardware.TestPlanRun(run_id="three", plan_path="/tmp/p3", report_path="/tmp/r3", normalized_plan={"run": {"iterations": 1}}, status="running", created_at="2026-01-01T00:00:04Z")
+    with mgr._lock:
+        mgr._runs = {"one": one, "two": two, "three": three}
+        mgr._prune_completed_locked()
+        kept = set(mgr._runs)
+    assert kept == {"two", "three"}
