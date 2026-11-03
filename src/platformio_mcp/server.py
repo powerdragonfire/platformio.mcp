@@ -38,9 +38,9 @@ async def lifespan(server: MCPServer) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        monitors.stop_all()
+        test_plan_runs.stop_all(wait_s=10.0, stop_monitors=True)
         debuggers.stop_all()
-        test_plan_runs.stop_all()
+        monitors.stop_all()
 
 
 def create_server() -> MCPServer:

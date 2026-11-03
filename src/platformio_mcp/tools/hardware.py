@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import configparser
 import hashlib
 import json
 import re
@@ -13,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..core import check_policy, guard, monitors, run_json
+from ..core import check_policy, default_envs, env_setting, guard, monitors, project_config, run_json
 from ..pio import resolve_project_dir
 from .analysis import DEFAULT_FAIL_PATTERN
 from .build import pio_upload
@@ -36,6 +37,45 @@ def _read_plan(path: str) -> tuple[Path, dict[str, Any]]:
     if not isinstance(data, dict):
         raise ValueError("plan must be a JSON object")
     return plan_path, data
+
+
+def _resolve_environment(project_dir: str, environment: str | None) -> str:
+    cfg = _config_for_project(project_dir)
+    envs = default_envs(cfg)
+    if environment:
+        if environment not in envs and f"env:{environment}" not in cfg:
+            raise ValueError(f"environment '{environment}' not found in platformio.ini")
+        return environment
+    if not envs:
+        raise ValueError("platformio.ini declares no environments.")
+    if len(envs) > 1:
+        raise ValueError("plan must set environment (or pass env) when multiple PlatformIO environments are available.")
+    return envs[0]
+
+
+def _resolve_ports(project_dir: str, environment: str, serial: dict[str, Any]) -> tuple[str, str, int | None]:
+    cfg = _config_for_project(project_dir)
+    configured_monitor_port = env_setting(cfg, environment, "monitor_port")
+    configured_upload_port = env_setting(cfg, environment, "upload_port")
+    monitor_hint = serial.get("monitor_port") or configured_monitor_port or serial.get("upload_port") or configured_upload_port
+    monitor_port, cfg_baud = _pick_port(monitor_hint, project_dir, environment)
+    upload_port = serial.get("upload_port") or configured_upload_port or monitor_port
+    return monitor_port, upload_port, cfg_baud
+
+
+def _config_for_project(project_dir: str) -> dict[str, dict[str, Any]]:
+    try:
+        return project_config(project_dir)
+    except Exception:
+        path = Path(project_dir) / "platformio.ini"
+        if not path.exists():
+            return {}
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.read(path, encoding="utf-8")
+        out: dict[str, dict[str, Any]] = {}
+        for section in parser.sections():
+            out[section] = {k: v for k, v in parser.items(section)}
+        return out
 
 
 def _normalize_plan(
@@ -65,7 +105,7 @@ def _normalize_plan(
     project = str(project_path)
     project = str(resolve_project_dir(project))
 
-    environment = env or data.get("environment") or board.get("platformio_env")
+    environment = _resolve_environment(project, env or data.get("environment") or board.get("platformio_env"))
     success = serial.get("success_pattern")
     if not success:
         raise ValueError("plan.serial_assertion.success_pattern is required")
@@ -210,6 +250,15 @@ class TestPlanRunManager:
         self._max_runs = max(max_runs, 1)
 
     def start(self, plan_path: str, normalized_plan: dict[str, Any]) -> TestPlanRun:
+        with self._lock:
+            for active in self._runs.values():
+                if active.status != "running":
+                    continue
+                if active.normalized_plan.get("project_dir") == normalized_plan.get("project_dir"):
+                    raise RuntimeError(
+                        f"project {normalized_plan['project_dir']} already has running test-plan run {active.run_id}; "
+                        "wait for it to finish or cancel it before starting another run."
+                    )
         run_id = uuid.uuid4().hex[:8]
         report_dir = Path(normalized_plan["report_dir"])
         report_dir.mkdir(parents=True, exist_ok=True)
@@ -247,7 +296,7 @@ class TestPlanRunManager:
             run.cancel_reason = reason or "cancelled by user"
         return run
 
-    def stop_all(self) -> None:
+    def stop_all(self, wait_s: float = 10.0, stop_monitors: bool = True) -> None:
         with self._lock:
             run_ids = list(self._runs.keys())
         for run_id in run_ids:
@@ -255,6 +304,21 @@ class TestPlanRunManager:
                 self.cancel(run_id, "server shutdown")
             except Exception:
                 pass
+        if stop_monitors:
+            try:
+                monitors.stop_all()
+            except Exception:
+                pass
+        deadline = time.monotonic() + max(0.0, wait_s)
+        for run_id in run_ids:
+            try:
+                run = self.get(run_id)
+            except KeyError:
+                continue
+            thread = run.thread
+            if thread is None or not thread.is_alive():
+                continue
+            thread.join(max(0.0, deadline - time.monotonic()))
 
     def _write_report(self, run: TestPlanRun) -> None:
         with run.lock:
@@ -291,10 +355,7 @@ class TestPlanRunManager:
         plan = run.normalized_plan
         run.started_at = _now()
         run.source = _git_identity(plan["project_dir"])
-        try:
-            run.firmware = _firmware_identity(plan["project_dir"], plan["environment"])
-        except Exception:
-            run.firmware = {"environment": plan["environment"], "program_path": None, "sha256": None, "size_bytes": None}
+        run.firmware = {"environment": plan["environment"], "program_path": None, "sha256": None, "size_bytes": None}
         run.summary = self._make_summary(run)
         self._write_report(run)
         try:
@@ -310,7 +371,7 @@ class TestPlanRunManager:
                 self._write_report(run)
             with run.lock:
                 if run.status == "running":
-                    run.status = "completed"
+                    run.status = "cancelled" if run.cancel_requested else "completed"
         except Exception as exc:
             with run.lock:
                 run.status = "failed"
@@ -333,10 +394,32 @@ class TestPlanRunManager:
     def _run_iteration(self, run: TestPlanRun, index: int) -> dict[str, Any]:
         plan = run.normalized_plan
         serial = plan["serial_assertion"]
+        max_lines = int(serial["max_lines"])
+        timeout_s = float(serial["timeout_s"])
+        observation_window_s = float(serial["observation_window_s"])
+        reconnect_left = int(serial["reconnect_attempts"])
+        reconnect_delay_s = float(serial["reconnect_delay_s"])
         started = time.monotonic()
         started_at = _now()
+        evidence_dir = Path(run.report_path).with_suffix("").with_name(Path(run.report_path).stem + "-evidence")
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        evidence_path = evidence_dir / f"iter-{index:04d}.log"
+        evidence_fh = evidence_path.open("w", encoding="utf-8")
+        line_count = 0
+        lines_tail: list[str] = []
 
-        def finalize(outcome: str, summary: str, lines: list[str], **extra: Any) -> dict[str, Any]:
+        def append_lines(new_lines: list[str]) -> None:
+            nonlocal line_count, lines_tail
+            if not new_lines:
+                return
+            evidence_fh.write("\n".join(new_lines) + "\n")
+            line_count += len(new_lines)
+            lines_tail.extend(new_lines)
+            if len(lines_tail) > max_lines:
+                lines_tail = lines_tail[-max_lines:]
+
+        def finalize(outcome: str, summary: str, **extra: Any) -> dict[str, Any]:
+            evidence_fh.flush()
             rec: dict[str, Any] = {
                 "index": index,
                 "outcome": outcome,
@@ -344,27 +427,24 @@ class TestPlanRunManager:
                 "started_at": started_at,
                 "finished_at": _now(),
                 "duration_s": round(time.monotonic() - started, 2),
-                "line_count": len(lines),
-                "lines_tail": lines[-40:],
+                "line_count": line_count,
+                "lines_tail": lines_tail[-40:],
                 **extra,
             }
             if outcome != "pass":
-                evidence_dir = Path(run.report_path).with_suffix("").with_name(Path(run.report_path).stem + "-evidence")
-                evidence_dir.mkdir(parents=True, exist_ok=True)
-                evidence_path = evidence_dir / f"iter-{index:04d}.log"
-                evidence_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
                 rec["evidence_path"] = str(evidence_path)
+            else:
+                try:
+                    evidence_path.unlink()
+                except OSError:
+                    pass
             return rec
 
         try:
-            port, cfg_baud = _pick_port(
-                serial.get("monitor_port") or serial.get("upload_port"),
-                plan["project_dir"],
-                plan["environment"],
-            )
+            port, upload_port, cfg_baud = _resolve_ports(plan["project_dir"], plan["environment"], serial)
         except Exception as exc:
             code = "device_ambiguous" if "several candidate ports" in str(exc) else "device_missing"
-            return finalize("infra_error", f"Iteration {index}: cannot select device port: {exc}", [], error_code=code)
+            return finalize("infra_error", f"Iteration {index}: cannot select device port: {exc}", error_code=code)
 
         baud = int(serial.get("baud") or cfg_baud or 115200)
         run.device = {**_device_identity(port), "identity": plan.get("device_identity")}
@@ -377,35 +457,26 @@ class TestPlanRunManager:
             upload_result = pio_upload(
                 project_dir=plan["project_dir"],
                 env=plan["environment"],
-                upload_port=serial.get("upload_port") or port,
+                upload_port=upload_port,
                 stop_open_sessions=plan["run"].get("stop_open_sessions", True),
             )
             if not upload_result.get("ok"):
                 return finalize(
                     "infra_error",
                     f"Iteration {index}: upload failed ({upload_result.get('error') or 'upload_failed'}): {upload_result.get('summary', '')}",
-                    [],
                     error_code="upload_failed",
                     upload={k: upload_result.get(k) for k in ("ok", "status", "summary", "log_path", "port_error", "port_diagnosis")},
                 )
-            if not run.firmware.get("sha256"):
-                try:
-                    run.firmware = _firmware_identity(plan["project_dir"], plan["environment"])
-                except Exception:
-                    pass
+            try:
+                run.firmware = _firmware_identity(plan["project_dir"], plan["environment"])
+            except Exception:
+                run.firmware = {"environment": plan["environment"], "program_path": None, "sha256": None, "size_bytes": None}
 
         success_re = re.compile(serial["success_pattern"])
         failure_re = re.compile(serial["failure_pattern"]) if serial.get("failure_pattern") else None
 
-        timeout_s = float(serial["timeout_s"])
-        observation_window_s = float(serial["observation_window_s"])
-        max_lines = int(serial["max_lines"])
-        reconnect_left = int(serial["reconnect_attempts"])
-        reconnect_delay_s = float(serial["reconnect_delay_s"])
-
         t0 = time.monotonic()
         deadline = t0 + timeout_s
-        lines: list[str] = []
         matched_success = None
         matched_failure = None
         success_seen_at = None
@@ -417,18 +488,25 @@ class TestPlanRunManager:
             return monitors.start(port, baud)
 
         try:
-            session = open_session()
+            try:
+                session = open_session()
+            except Exception as exc:
+                return finalize(
+                    "infra_error",
+                    f"Iteration {index}: cannot open serial monitor on {port}: {exc}",
+                    error_code="serial_open_failed",
+                    upload={"log_path": upload_result.get("log_path") if upload_result else None},
+                )
             while True:
                 with run.lock:
                     if run.cancel_requested:
-                        return finalize("infra_error", f"Iteration {index}: cancelled.", lines, error_code="cancelled", upload={"log_path": upload_result.get("log_path") if upload_result else None})
+                        return finalize("infra_error", f"Iteration {index}: cancelled.", error_code="cancelled", upload={"log_path": upload_result.get("log_path") if upload_result else None})
                 now = time.monotonic()
                 if now >= deadline:
                     if matched_success:
                         return finalize(
                             "timeout",
                             f"Iteration {index}: success marker seen but observation window ({observation_window_s}s) did not complete before timeout.",
-                            lines,
                             matched_success_line=matched_success,
                             matched_failure_line=matched_failure,
                             reconnects=reconnects,
@@ -437,7 +515,6 @@ class TestPlanRunManager:
                     return finalize(
                         "timeout",
                         f"Iteration {index}: timeout waiting for success pattern '{serial['success_pattern']}'.",
-                        lines,
                         reconnects=reconnects,
                         upload={"log_path": upload_result.get("log_path") if upload_result else None},
                     )
@@ -445,19 +522,19 @@ class TestPlanRunManager:
                     return finalize(
                         "pass",
                         f"Iteration {index}: pass. Saw success marker '{matched_success}' and no failure pattern during {observation_window_s}s observation window.",
-                        lines,
                         matched_success_line=matched_success,
                         reconnects=reconnects,
                         upload={"log_path": upload_result.get("log_path") if upload_result else None},
                     )
 
-                wait_s = max(0.05, min(0.5, deadline - now))
+                read_deadline = deadline if success_seen_at is None else min(deadline, success_seen_at + observation_window_s)
+                wait_s = min(0.5, max(0.0, read_deadline - now))
+                if wait_s <= 0:
+                    continue
                 r = session.read(cursor=cursor, max_lines=max_lines, timeout_s=wait_s)
                 cursor = r["cursor"]
                 new_lines = r["lines"]
-                lines += new_lines
-                if len(lines) > max_lines:
-                    lines = lines[-max_lines:]
+                append_lines(new_lines)
 
                 for line in new_lines:
                     if failure_re and failure_re.search(line):
@@ -465,7 +542,6 @@ class TestPlanRunManager:
                         return finalize(
                             "fail",
                             f"Iteration {index}: failure pattern matched: '{line}'.",
-                            lines,
                             matched_success_line=matched_success,
                             matched_failure_line=matched_failure,
                             reconnects=reconnects,
@@ -479,14 +555,31 @@ class TestPlanRunManager:
                     if reconnect_left > 0 and time.monotonic() < deadline:
                         reconnect_left -= 1
                         reconnects += 1
+                        if session is not None:
+                            try:
+                                monitors.stop(session.id)
+                            except Exception:
+                                pass
+                            session = None
                         time.sleep(max(reconnect_delay_s, 0))
-                        session = open_session()
+                        try:
+                            session = open_session()
+                        except Exception as exc:
+                            return finalize(
+                                "infra_error",
+                                f"Iteration {index}: cannot reopen serial monitor on {port}: {exc}",
+                                error_code="serial_reconnect_failed",
+                                matched_success_line=matched_success,
+                                reconnects=reconnects,
+                                upload={"log_path": upload_result.get("log_path") if upload_result else None},
+                            )
+                        matched_success = None
+                        success_seen_at = None
                         cursor = 0
                         continue
                     return finalize(
                         "infra_error",
                         f"Iteration {index}: serial connection closed ({r['error'] or 'device disconnected'}).",
-                        lines,
                         error_code="serial_disconnected",
                         matched_success_line=matched_success,
                         reconnects=reconnects,
@@ -498,6 +591,7 @@ class TestPlanRunManager:
                     monitors.stop(session.id)
                 except Exception:
                     pass
+            evidence_fh.close()
 
 
 test_plan_runs = TestPlanRunManager()

@@ -93,6 +93,19 @@ def test_plan_timeout(monkeypatch, project):
     assert done["iterations"][-1]["outcome"] == "timeout"
 
 
+def test_observation_window_bounds_read_wait(monkeypatch, project):
+    _common_mocks(monkeypatch)
+    mgr = core.MonitorManager(opener=lambda port, baud: FakePort([b"BOOT_OK\n"]))
+    monkeypatch.setattr(hardware, "monitors", mgr)
+    plan = _write_plan(project, serial_assertion={"timeout_s": 0.4, "observation_window_s": 0.15})
+
+    started = hardware.pio_test_plan_start(str(plan))
+    done = _wait_done(started["run_id"])
+
+    rec = done["iterations"][-1]
+    assert rec["outcome"] == "pass"
+
+
 def test_success_marker_does_not_end_window(monkeypatch, project):
     _common_mocks(monkeypatch)
     mgr = core.MonitorManager(opener=lambda port, baud: FakePort([b"BOOT_OK\n", b"panic now\n"], delay=0.03))
@@ -144,6 +157,44 @@ def test_reconnect_and_pass(monkeypatch, project):
     assert rec["reconnects"] == 1
 
 
+def test_reconnect_resets_success_observation(monkeypatch, project):
+    _common_mocks(monkeypatch)
+
+    class DisconnectAfterSuccess(FakePort):
+        def __init__(self):
+            super().__init__([b"BOOT_OK\n"], delay=0.01)
+            self.closed_once = False
+
+        def read(self, size=1):
+            if self.chunks:
+                return super().read(size)
+            if not self.closed_once:
+                self.closed_once = True
+                raise OSError("disconnect")
+            return b""
+
+    calls = {"n": 0}
+
+    def opener(port, baud):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return DisconnectAfterSuccess()
+        return FakePort([], delay=0.01)
+
+    mgr = core.MonitorManager(opener=opener)
+    monkeypatch.setattr(hardware, "monitors", mgr)
+    plan = _write_plan(
+        project,
+        serial_assertion={"reconnect_attempts": 1, "reconnect_delay_s": 0.2, "timeout_s": 0.35, "observation_window_s": 0.05},
+    )
+
+    started = hardware.pio_test_plan_start(str(plan))
+    done = _wait_done(started["run_id"])
+
+    rec = done["iterations"][-1]
+    assert rec["outcome"] == "timeout"
+
+
 def test_cancel_run(monkeypatch, project):
     _common_mocks(monkeypatch)
     mgr = core.MonitorManager(opener=lambda port, baud: FakePort([], delay=0.02))
@@ -165,6 +216,20 @@ def test_cancel_run(monkeypatch, project):
     assert done["iterations_done"] < done["iterations_total"]
 
 
+def test_cancel_during_final_iteration_marks_run_cancelled(monkeypatch, project):
+    _common_mocks(monkeypatch)
+    mgr = core.MonitorManager(opener=lambda port, baud: FakePort([], delay=0.02))
+    monkeypatch.setattr(hardware, "monitors", mgr)
+    plan = _write_plan(project, run={"iterations": 1, "upload_each_iteration": False}, serial_assertion={"timeout_s": 0.8, "observation_window_s": 0.1})
+
+    started = hardware.pio_test_plan_start(str(plan))
+    time.sleep(0.1)
+    hardware.pio_test_plan_cancel(started["run_id"], "stop now")
+    done = _wait_done(started["run_id"])
+
+    assert done["status"] == "cancelled"
+
+
 def test_ambiguous_device_selection_is_infra_error(monkeypatch, project):
     _common_mocks(monkeypatch)
     monkeypatch.setattr(hardware, "_pick_port", lambda port, project_dir, env: (_ for _ in ()).throw(RuntimeError("several candidate ports: /dev/ttyUSB0, /dev/ttyUSB1")))
@@ -176,6 +241,101 @@ def test_ambiguous_device_selection_is_infra_error(monkeypatch, project):
     rec = done["iterations"][-1]
     assert rec["outcome"] == "infra_error"
     assert rec["error_code"] == "device_ambiguous"
+
+
+def test_concurrent_run_on_same_project_is_rejected(monkeypatch, project):
+    _common_mocks(monkeypatch)
+    mgr = core.MonitorManager(opener=lambda port, baud: FakePort([], delay=0.05))
+    monkeypatch.setattr(hardware, "monitors", mgr)
+    plan = _write_plan(project, serial_assertion={"timeout_s": 0.5})
+
+    started = hardware.pio_test_plan_start(str(plan))
+    blocked = hardware.pio_test_plan_start(str(plan))
+    done = _wait_done(started["run_id"])
+
+    assert blocked["ok"] is False
+    assert "already has running test-plan run" in blocked["summary"]
+    assert done["status"] in {"completed", "cancelled"}
+
+
+def test_upload_port_prefers_environment_upload_port(monkeypatch, tmp_path):
+    (tmp_path / "platformio.ini").write_text(
+        "[env:test]\nplatform = native\nboard = native\nmonitor_port = /dev/console\nupload_port = /dev/programmer\n",
+        encoding="utf-8",
+    )
+    plan = _write_plan(tmp_path)
+
+    monkeypatch.setattr(hardware, "_git_identity", lambda project_dir: {"commit": "abc", "branch": "main", "dirty": False})
+    monkeypatch.setattr(hardware, "_firmware_identity", lambda project_dir, env: {"environment": env, "program_path": "/tmp/fw.bin", "sha256": "f" * 64, "size_bytes": 1234})
+    monkeypatch.setattr(hardware, "_pick_port", lambda port, project_dir, env: (port or "/dev/fallback", 115200))
+    monkeypatch.setattr(hardware, "_device_identity", lambda port: {"port": port, "description": "fake", "hwid": "x"})
+    monkeypatch.setattr(hardware, "monitors", core.MonitorManager(opener=lambda port, baud: FakePort([b"BOOT_OK\n"], delay=0.01)))
+
+    seen = {}
+
+    def fake_upload(project_dir, env, upload_port, stop_open_sessions):
+        seen["upload_port"] = upload_port
+        return {"ok": True, "summary": "ok", "status": "success", "log_path": "/tmp/upload.log", "port_error": None, "port_diagnosis": None}
+
+    monkeypatch.setattr(hardware, "pio_upload", fake_upload)
+
+    started = hardware.pio_test_plan_start(str(plan))
+    _wait_done(started["run_id"])
+
+    assert seen["upload_port"] == "/dev/programmer"
+
+
+def test_firmware_identity_is_refreshed_after_upload(monkeypatch, project):
+    _common_mocks(monkeypatch)
+    monkeypatch.setattr(hardware, "monitors", core.MonitorManager(opener=lambda port, baud: FakePort([b"BOOT_OK\n"], delay=0.01)))
+    plan = _write_plan(project, run={"iterations": 1, "upload_each_iteration": True}, serial_assertion={"timeout_s": 0.5, "observation_window_s": 0.05})
+    calls = {"n": 0}
+
+    def firmware(project_dir, env):
+        calls["n"] += 1
+        return {"environment": env, "program_path": "/tmp/fw.bin", "sha256": f"{calls['n']:064x}", "size_bytes": 1234}
+
+    monkeypatch.setattr(hardware, "_firmware_identity", firmware)
+
+    started = hardware.pio_test_plan_start(str(plan))
+    done = _wait_done(started["run_id"])
+
+    assert calls["n"] == 1
+    assert done["firmware"]["sha256"] == f"{1:064x}"
+
+
+def test_serial_open_error_is_iteration_infra_error(monkeypatch, project):
+    _common_mocks(monkeypatch)
+    monkeypatch.setattr(
+        hardware,
+        "monitors",
+        core.MonitorManager(opener=lambda port, baud: (_ for _ in ()).throw(OSError("busy"))),
+    )
+    plan = _write_plan(project, run={"iterations": 2, "upload_each_iteration": False}, serial_assertion={"timeout_s": 0.2})
+
+    started = hardware.pio_test_plan_start(str(plan))
+    done = _wait_done(started["run_id"])
+
+    assert done["status"] == "completed"
+    assert done["counts"]["infra_error"] == 2
+    assert all(it["error_code"] == "serial_open_failed" for it in done["iterations"])
+
+
+def test_validate_rejects_ambiguous_environment_without_explicit_env(tmp_path):
+    (tmp_path / "platformio.ini").write_text("[env:a]\nplatform = native\nboard = native\n[env:b]\nplatform = native\nboard = native\n", encoding="utf-8")
+    plan = {
+        "plan_version": 1,
+        "name": "serial-check",
+        "project_dir": str(tmp_path),
+        "run": {"iterations": 1},
+        "serial_assertion": {"success_pattern": "BOOT_OK"},
+    }
+    p = tmp_path / "plan.json"
+    p.write_text(json.dumps(plan), encoding="utf-8")
+
+    r = hardware.pio_test_plan_validate(str(p))
+    assert r["ok"] is False
+    assert "must set environment" in r["summary"]
 
 
 def test_validate_rejects_invalid_plan_version_and_regex(project):
@@ -205,3 +365,16 @@ def test_run_manager_prunes_old_completed_runs():
         mgr._prune_completed_locked()
         kept = set(mgr._runs)
     assert kept == {"two", "three"}
+
+
+def test_stop_all_waits_for_run_finalization(monkeypatch, project):
+    _common_mocks(monkeypatch)
+    monkeypatch.setattr(hardware, "monitors", core.MonitorManager(opener=lambda port, baud: FakePort([], delay=0.02)))
+    plan = _write_plan(project, run={"iterations": 1, "upload_each_iteration": False}, serial_assertion={"timeout_s": 1.0})
+
+    started = hardware.pio_test_plan_start(str(plan))
+    run = hardware.test_plan_runs.get(started["run_id"])
+    hardware.test_plan_runs.stop_all(wait_s=2.0, stop_monitors=True)
+
+    assert run.finished_at is not None
+    assert run.status in {"cancelled", "completed"}
