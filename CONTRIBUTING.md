@@ -52,7 +52,7 @@ claude mcp add platformio -- uv run --directory /path/to/platformio.mcp platform
 1. Create a branch: `git checkout -b my-change`
 2. Make the change and add or update a test in `tests/`
 3. Run `uv run pytest` until green
-4. Add a line under `## [Unreleased]` in `CHANGELOG.md`
+4. Add a line under `## [Unreleased]` in `CHANGELOG.md` (label the PR `skip-changelog` if users never see the change)
 5. Open a PR: `gh pr create --fill` or use the GitHub UI
 
 The PR template asks how you tested. If hardware was involved, say which board.
@@ -71,6 +71,20 @@ The PR template asks how you tested. If hardware was involved, say which board.
 - Return structured errors (`ok: false` plus a reason) rather than raising, so the agent can recover.
 - Keep tool docstrings short and action-oriented: they are the agent's only manual.
 - Formatting uses [ruff](https://docs.astral.sh/ruff/). Run `uvx ruff format` and `uvx ruff check --fix` on files you touch.
+
+## Versioning and releases
+
+The project follows [Semantic Versioning](https://semver.org/) (`0.x` while the tool surface settles: minor for new tools or behaviour changes, patch for fixes) and keeps a [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) `CHANGELOG.md`. Every PR adds a line under `## [Unreleased]`; CI fails without one unless the PR has the `skip-changelog` label (dependabot PRs are exempt).
+
+Seven files carry the version, so `scripts/release.py` edits them together and CI (`python3 scripts/release.py check`) fails if they drift. To cut a release:
+
+1. Branch: `git checkout -b release/X.Y.Z`
+2. Bump: `python3 scripts/release.py bump minor` (or `major`, `patch`, `X.Y.Z`). This rewrites every version string and turns `[Unreleased]` into a dated `[X.Y.Z]` section.
+3. Refresh the lockfile: `uv lock`
+4. Open a PR, wait for CI, merge.
+5. Tag the merge commit: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`
+
+The tag push runs `.github/workflows/publish.yml`: it checks the tag against the version strings and changelog, runs the tests, builds, publishes to PyPI with trusted publishing, and creates the GitHub release from the changelog section.
 
 ## Reporting a security issue
 

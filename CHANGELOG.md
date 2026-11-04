@@ -6,6 +6,19 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-04
+
+### Added
+- Declarative hardware test plans: `pio_test_plan_validate`, `pio_test_plan_start`, `pio_test_plan_status`, and `pio_test_plan_cancel` run a JSON plan for N iterations. Each iteration gets a verdict (`pass`, `fail`, `timeout`, `infra_error`), and evidence logs record the git and firmware identity. An example plan lives in `examples/ch32h4-spi-loopback`.
+- Automated PyPI publishing through trusted publishing when a `v*` tag is pushed.
+- `scripts/release.py` keeps every version string in sync, checks the changelog, and rolls `[Unreleased]` into a dated release. CI runs it on every pull request.
+
+### Fixed
+- Cancelling a test-plan run before an iteration's upload no longer crashes the runner; the run now ends as `cancelled` instead of `failed`.
+
+### Changed
+- Dependency updates: `mcp` 2.3.0, `pyjwt` 2.15.0, `certifi` 2026.10.18, `opentelemetry-api` 1.45.1, and newer `actions/checkout` and `astral-sh/setup-uv`.
+
 ## [0.2.0] - 2026-09-18
 
 ### Added
