@@ -12,6 +12,7 @@ EXPECTED_TOOLS = {
     "pio_pkg_search", "pio_pkg_install", "pio_pkg_uninstall", "pio_pkg_list", "pio_pkg_outdated", "pio_pkg_update",
     "pio_deps_check",
     "pio_decode_backtrace", "pio_size_report", "pio_flash_and_verify",
+    "pio_test_plan_validate", "pio_test_plan_start", "pio_test_plan_status", "pio_test_plan_cancel",
     "pio_upload_ota",
     "pio_partition_table", "pio_coredump",
     "pio_power_profile",
