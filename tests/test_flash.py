@@ -278,6 +278,46 @@ def test_coredump_runs_analyzer_and_summarizes(project, monkeypatch, tmp_path):
     assert cmd[1:5] == ["-m", "esp_coredump", "--chip", "esp32"] and "--core-format" in cmd and cmd[-1].endswith("firmware.elf")
 
 
+def test_coredump_passes_gdb_from_tool_package(project, monkeypatch, tmp_path):
+    monkeypatch.setattr(flash, "run_pio", FakeEsptool(_dump_image(b"\x10\x00\x00\x00" + b"core" * 100)))
+    monkeypatch.setattr(flash, "_analyzer_available", lambda: True)
+    monkeypatch.setattr(flash, "find_gdb", lambda cc_path: "/pkgs/tool-xtensa-esp-elf-gdb/bin/xtensa-esp32-elf-gdb")
+    seen = {}
+
+    def fake_run(cmd, capture_output, text, errors, timeout):
+        seen["cmd"] = cmd
+
+        class P:
+            returncode = 0
+            stdout = COREDUMP_REPORT
+            stderr = ""
+
+        return P()
+
+    monkeypatch.setattr(flash.subprocess, "run", fake_run)
+    r = flash.pio_coredump(project_dir=str(project), out_path=str(tmp_path / "d.bin"))
+    assert r["ok"] is True and r["gdb"].endswith("xtensa-esp32-elf-gdb")
+    i = seen["cmd"].index("--gdb")
+    assert seen["cmd"][i + 1] == "/pkgs/tool-xtensa-esp-elf-gdb/bin/xtensa-esp32-elf-gdb"
+    assert seen["cmd"].index("info_corefile") < i  # esp-coredump 1.x rejects --gdb before the subcommand
+
+
+def test_coredump_analyzer_failure_has_error_code(project, monkeypatch, tmp_path):
+    monkeypatch.setattr(flash, "run_pio", FakeEsptool(_dump_image(b"\x10\x00\x00\x00" + b"core" * 100)))
+    monkeypatch.setattr(flash, "_analyzer_available", lambda: True)
+    monkeypatch.setattr(flash, "find_gdb", lambda cc_path: None)
+
+    class P:
+        returncode = 1
+        stdout = "ERROR: GDB executable not found."
+        stderr = ""
+
+    monkeypatch.setattr(flash.subprocess, "run", lambda *a, **k: P())
+    r = flash.pio_coredump(project_dir=str(project), out_path=str(tmp_path / "d.bin"))
+    assert r["ok"] is False and r["error"] == "coredump_analyze_failed"
+    assert r["gdb"] is None and "no GDB" in r["summary"]
+
+
 def test_coredump_needs_coredump_partition(project, monkeypatch):
     (project / "parts.csv").write_text("nvs, data, nvs, 0x9000, 0x5000\nfactory, app, factory, 0x10000, 0x100000\n")
     monkeypatch.setattr(flash, "run_pio", FakeEsptool(b"\xff" * 1024))

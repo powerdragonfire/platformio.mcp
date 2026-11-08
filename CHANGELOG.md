@@ -15,6 +15,7 @@ All notable changes to this project are recorded here. The format follows
 
 ### Fixed
 - Cancelling a test-plan run before an iteration's upload no longer crashes the runner; the run now ends as `cancelled` instead of `failed`.
+- `pio_coredump` decodes again on espressif32 6.x and later. GDB is now found in the separate `tool-xtensa-esp-elf-gdb` / `tool-riscv32-esp-elf-gdb` package, and `--gdb` is passed after the `info_corefile` subcommand as esp-coredump 1.x requires. A failed decode now returns `error: "coredump_analyze_failed"` and names the GDB it used ([#21](https://github.com/powerdragonfire/platformio.mcp/issues/21)).
 
 ### Changed
 - Dependency updates: `mcp` 2.3.0, `pyjwt` 2.15.0, `certifi` 2026.10.18, `opentelemetry-api` 1.45.1, and newer `actions/checkout` and `astral-sh/setup-uv`.
