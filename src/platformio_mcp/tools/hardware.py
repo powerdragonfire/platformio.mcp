@@ -453,7 +453,7 @@ class TestPlanRunManager:
         if plan["run"]["upload_each_iteration"] or index == 1:
             with run.lock:
                 if run.cancel_requested:
-                    return finalize("infra_error", f"Iteration {index}: cancelled before upload.", [], error_code="cancelled")
+                    return finalize("infra_error", f"Iteration {index}: cancelled before upload.", error_code="cancelled")
             upload_result = pio_upload(
                 project_dir=plan["project_dir"],
                 env=plan["environment"],

@@ -1,7 +1,7 @@
 {
   "identifier": "powerdragonfire-platformio_mcp",
   "name": "PlatformIO",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "PlatformIO for AI agents: build, flash (serial or OTA), serial monitor, tests, crash and core-dump decoding, partition-table checks, memory and power profiling, dependency audits, and live GDB debugging through the PlatformIO CLI.",
   "author": "Mihir Gandecha",
   "authorUrl": "https://github.com/powerdragonfire",
@@ -1843,6 +1843,168 @@
       "inputSchema": {
         "properties": {},
         "title": "pio_debug_listArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_test_plan_validate",
+      "description": "Validate a declarative hardware test plan JSON file before execution. Checks required fields for a serial assertion workflow (project, success/failure patterns, timeout, observation window, iteration count) and returns the normalized plan.",
+      "inputSchema": {
+        "properties": {
+          "plan_path": {
+            "title": "Plan Path",
+            "type": "string"
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          }
+        },
+        "required": [
+          "plan_path"
+        ],
+        "title": "pio_test_plan_validateArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_test_plan_start",
+      "description": "Start a repeatable hardware test-plan run in the background. Each iteration can upload firmware, monitor serial output for pass/fail assertions, keep observing after success for the configured window, classify outcomes, and write a machine-readable report with evidence paths.",
+      "inputSchema": {
+        "properties": {
+          "plan_path": {
+            "title": "Plan Path",
+            "type": "string"
+          },
+          "iterations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Iterations"
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Dir"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          },
+          "report_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Report Dir"
+          }
+        },
+        "required": [
+          "plan_path"
+        ],
+        "title": "pio_test_plan_startArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_test_plan_status",
+      "description": "Read test-plan run progress and results: run status, pass/fail/timeout/infrastructure-error counts, firmware/source/device identity, and recent or full per-iteration outcomes with evidence references.",
+      "inputSchema": {
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "include_iterations": {
+            "default": false,
+            "title": "Include Iterations",
+            "type": "boolean"
+          },
+          "tail_iterations": {
+            "default": 20,
+            "title": "Tail Iterations",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "pio_test_plan_statusArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "pio_test_plan_cancel",
+      "description": "Request explicit cancellation of an in-progress test-plan run by run_id. The active iteration stops at its next safe check and the run is finalized as cancelled with completed iteration evidence retained.",
+      "inputSchema": {
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "pio_test_plan_cancelArguments",
         "type": "object"
       }
     }
