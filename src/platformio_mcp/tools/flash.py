@@ -15,7 +15,7 @@ from typing import Any
 from ..core import default_envs, env_setting, guard, monitors, project_config
 from ..partitions import TABLE_OFFSET, TABLE_SIZE, Partition, check_partitions, diff_partitions, parse_number, parse_partition_bin, parse_partition_csv
 from ..pio import log_dir, resolve_project_dir, run_pio
-from ..toolchain import load_toolchain, project_metadata
+from ..toolchain import find_gdb, load_toolchain, project_metadata
 from .devices import _pick_port
 from .project import _all_boards
 
@@ -211,9 +211,10 @@ def _run_analyzer(dump: Path, elf: Path, gdb: str | None, chip: str | None, time
     cmd = [sys.executable, "-m", "esp_coredump"]
     if chip:
         cmd += ["--chip", chip]
-    if gdb:
+    cmd += ["info_corefile"]
+    if gdb:  # a subcommand option in esp-coredump 1.x: `--gdb` before `info_corefile` exits 2 with "No such option"
         cmd += ["--gdb", gdb]
-    cmd += ["info_corefile", "--core", str(dump), "--core-format", "raw", str(elf)]
+    cmd += ["--core", str(dump), "--core-format", "raw", str(elf)]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -285,8 +286,7 @@ def pio_coredump(project_dir: str | None = None, env: str | None = None, port: s
         tc = load_toolchain(str(path), env)
         if tc.elf_path and Path(tc.elf_path).exists():
             elf = Path(tc.elf_path)
-            cand = f"{tc.prefix}gdb"
-            gdb = cand if tc.prefix and Path(cand).exists() else None
+        gdb = find_gdb(tc.cc_path)
     except Exception:
         pass
     base.update({"elf_path": str(elf) if elf else None, "gdb": gdb, "analyzer_available": _analyzer_available()})
@@ -302,8 +302,10 @@ def pio_coredump(project_dir: str | None = None, env: str | None = None, port: s
         bt = analysis.get("backtrace") or []
         summary = header + f" Crashed task: {analysis.get('crashed_task') or 'unknown'}." + (f" {analysis['reason']}." if analysis.get("reason") else "") + (" Top frames: " + " | ".join(bt[:4]) + "." if bt else " No backtrace frames parsed; see output.")
     else:
-        summary = header + f" esp-coredump failed (exit {analysis.get('exit_code')}): {analysis.get('output', '')[-400:].strip()}"
-    return {"ok": bool(analysis.get("ok")), "summary": summary, **base, "analysis": analysis}
+        where = f" GDB: {gdb}." if gdb else " GDB: no GDB found next to the compiler, in a tool-*gdb* package, or on PATH."
+        summary = header + f" esp-coredump failed (exit {analysis.get('exit_code')}):{where} {analysis.get('output', '')[-400:].strip()}"
+        return {"ok": False, "error": analysis.get("error") or "coredump_analyze_failed", "summary": summary, **base, "analysis": analysis}
+    return {"ok": True, "summary": summary, **base, "analysis": analysis}
 
 
 def register(mcp) -> None:

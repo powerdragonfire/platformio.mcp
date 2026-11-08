@@ -144,3 +144,38 @@ def test_parse_nm_and_group():
     assert top["file"] == "<no debug info>" or top["size"] >= files[1]["size"]
     disp = next(f for f in files if f["file"] == "firmware/src/display_task.cpp")
     assert disp["size"] == 0x737 + 0x100 and disp["symbols"] == 2 and disp["code"] == 0x737 and disp["bss"] == 0x100
+
+
+def _touch(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("")
+    return path
+
+
+def test_find_gdb_next_to_compiler(tmp_path):
+    cc = _touch(tmp_path / "toolchain-gccarmnoneeabi" / "bin" / "arm-none-eabi-gcc")
+    gdb = _touch(tmp_path / "toolchain-gccarmnoneeabi" / "bin" / "arm-none-eabi-gdb")
+    assert tc.find_gdb(str(cc)) == str(gdb)
+
+
+def test_find_gdb_in_sibling_tool_package(tmp_path):
+    # espressif32 6.x+: gdb ships in tool-xtensa-esp-elf-gdb, not next to the compiler
+    cc = _touch(tmp_path / "toolchain-xtensa-esp-elf" / "bin" / "xtensa-esp32-elf-gcc")
+    _touch(tmp_path / "tool-riscv32-esp-elf-gdb" / "bin" / "riscv32-esp-elf-gdb")
+    gdb = _touch(tmp_path / "tool-xtensa-esp-elf-gdb" / "bin" / "xtensa-esp32-elf-gdb")
+    assert tc.find_gdb(str(cc)) == str(gdb)
+
+
+def test_find_gdb_keeps_exe_suffix(tmp_path):
+    cc = _touch(tmp_path / "toolchain-riscv32-esp" / "bin" / "riscv32-esp-elf-gcc.exe")
+    gdb = _touch(tmp_path / "tool-riscv32-esp-elf-gdb" / "bin" / "riscv32-esp-elf-gdb.exe")
+    assert tc.find_gdb(str(cc)) == str(gdb)
+
+
+def test_find_gdb_falls_back_to_path_then_none(tmp_path, monkeypatch):
+    cc = _touch(tmp_path / "toolchain-xtensa-esp-elf" / "bin" / "xtensa-esp32-elf-gcc")
+    monkeypatch.setattr(tc.shutil, "which", lambda name: "/usr/local/bin/" + name if name == "xtensa-esp32-elf-gdb" else None)
+    assert tc.find_gdb(str(cc)) == "/usr/local/bin/xtensa-esp32-elf-gdb"
+    monkeypatch.setattr(tc.shutil, "which", lambda name: None)
+    assert tc.find_gdb(str(cc)) is None
+    assert tc.find_gdb("gcc") is None
