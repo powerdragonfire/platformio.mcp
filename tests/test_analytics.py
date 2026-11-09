@@ -179,11 +179,16 @@ def test_posthog_receives_anonymous_event(posthog, usage_dir):
 
     [body] = posthog.received
     assert posthog.paths == ["/i/v0/e/"]
-    assert body["api_key"] == "phc_test" and body["event"] == "tool_call"
+    assert body["api_key"] == "phc_test" and body["event"] == "$mcp_tool_call"
     assert body["distinct_id"] == (usage_dir / "install_id").read_text().strip()
     props = body["properties"]
     assert props["$process_person_profile"] is False
-    assert props["tool"] == "pio_build" and props["error"] == "policy_denied" and props["client_name"] == "claude-code"
+    assert props["$mcp_tool_name"] == "pio_build"
+    assert props["$mcp_is_error"] is True and props["$mcp_error_type"] == "policy_denied"
+    assert props["$mcp_duration_ms"] == 7 and props["$mcp_input_keys"] == ["env"]
+    assert props["$mcp_client_name"] == "claude-code" and props["$mcp_client_version"] == "2.1"
+    assert props["$mcp_server_name"] == "platformio" and props["$mcp_server_version"]
+    assert props["os"] and props["policy"] and props["session"]
 
 
 def test_first_run_notice_printed_once_and_install_id_stable(posthog, usage_dir, capsys):

@@ -6,6 +6,11 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-09
+
+### Changed
+- PostHog usage events are now `$mcp_tool_call` with PostHog's MCP property names (`$mcp_tool_name`, `$mcp_is_error`, `$mcp_error_type`, `$mcp_duration_ms`, `$mcp_client_name`, ...). PostHog's MCP analytics views now break calls down by tool and client. 0.4.0 sent the same data as `tool_call`.
+
 ## [0.4.0] - 2026-11-09
 
 ### Added
