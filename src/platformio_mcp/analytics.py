@@ -95,10 +95,27 @@ def install_id(directory: Path) -> tuple[str, bool]:
 
 
 def posthog_payload(event: dict[str, Any], key: str, distinct_id: str) -> dict[str, Any]:
+    """A `$mcp_tool_call` event with PostHog's MCP property names, so PostHog's MCP analytics views
+    break calls down by tool, client, error and duration. Our own extras keep plain names."""
     client = event.get("client") or {}
-    properties = {k: event[k] for k in ("session", "tool", "ok", "error", "duration_ms", "arg_keys", "server_version", "policy", "os", "python")}
-    properties.update({"client_name": client.get("name"), "client_version": client.get("version"), "$lib": "platformio.mcp", "$process_person_profile": False})
-    return {"api_key": key, "event": "tool_call", "distinct_id": distinct_id, "properties": properties, "timestamp": event["ts"]}
+    properties = {
+        "$mcp_tool_name": event["tool"],
+        "$mcp_is_error": not event["ok"],
+        "$mcp_error_type": event["error"],
+        "$mcp_duration_ms": event["duration_ms"],
+        "$mcp_input_keys": event["arg_keys"],
+        "$mcp_client_name": client.get("name"),
+        "$mcp_client_version": client.get("version"),
+        "$mcp_server_name": "platformio",
+        "$mcp_server_version": event["server_version"],
+        "session": event["session"],
+        "policy": event["policy"],
+        "os": event["os"],
+        "python": event["python"],
+        "$lib": "platformio.mcp",
+        "$process_person_profile": False,
+    }
+    return {"api_key": key, "event": "$mcp_tool_call", "distinct_id": distinct_id, "properties": properties, "timestamp": event["ts"]}
 
 
 def analytics_dir() -> Path:
