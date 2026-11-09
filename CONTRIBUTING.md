@@ -41,7 +41,8 @@ claude mcp add platformio -- uv run --directory /path/to/platformio.mcp platform
 | `src/platformio_mcp/parsers.py` | Turns build output and crash dumps into structured data |
 | `src/platformio_mcp/toolchain.py` | Finds `addr2line`, `size`, `nm` for the active toolchain |
 | `src/platformio_mcp/monitor.py` | Background serial monitor sessions |
-| `src/platformio_mcp/cli.py` | `install`, `doctor`, and other subcommands |
+| `src/platformio_mcp/cli.py` | `install`, `doctor`, `stats`, and other subcommands |
+| `src/platformio_mcp/analytics.py` | Usage events per tool call: the local log, PostHog sending, and the `stats` summary |
 | `tests/` | Unit tests plus `tests/projects/` fixtures for integration |
 | `skills/platformio/SKILL.md` | The agent-facing skill shipped with the plugin |
 
@@ -76,15 +77,29 @@ The PR template asks how you tested. If hardware was involved, say which board.
 
 The project follows [Semantic Versioning](https://semver.org/) (`0.x` while the tool surface settles: minor for new tools or behaviour changes, patch for fixes) and keeps a [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) `CHANGELOG.md`. Every PR adds a line under `## [Unreleased]`; CI fails without one unless the PR has the `skip-changelog` label (dependabot PRs are exempt).
 
-Seven files carry the version, so `scripts/release.py` edits them together and CI (`python3 scripts/release.py check`) fails if they drift. To cut a release:
+Seven files carry the version, so `scripts/release.py` edits them together and CI (`python3 scripts/release.py check`) fails if they drift.
 
-1. Branch: `git checkout -b release/X.Y.Z`
-2. Bump: `python3 scripts/release.py bump minor` (or `major`, `patch`, `X.Y.Z`). This rewrites every version string and turns `[Unreleased]` into a dated `[X.Y.Z]` section.
-3. Refresh the lockfile: `uv lock`
-4. Open a PR, wait for CI, merge.
-5. Tag the merge commit: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`
+A release ships in the same PR as the change it releases:
 
-The tag push runs `.github/workflows/publish.yml`: it checks the tag against the version strings and changelog, runs the tests, builds, publishes to PyPI with trusted publishing, and creates the GitHub release from the changelog section.
+1. On your feature branch, after the `[Unreleased]` lines are written: `python3 scripts/release.py bump minor` (or `major`, `patch`, `X.Y.Z`). This rewrites every version string and turns `[Unreleased]` into a dated `[X.Y.Z]` section.
+2. Refresh the lockfile: `uv lock`
+3. Open the PR, wait for CI, merge.
+
+The merge to `main` runs `.github/workflows/publish.yml`. When `v<version>` has no tag yet, it checks the version strings and changelog, runs the tests, builds, creates the tag on the merge commit, publishes to PyPI with trusted publishing, and creates the GitHub release from the changelog section. A merge that does not change the version tags nothing. Pushing a `vX.Y.Z` tag by hand still publishes, for a release cut from another commit.
+
+## Adoption numbers
+
+PyPI and GitHub count installs and visits:
+
+```bash
+uvx pypistats recent platformio.mcp                                   # PyPI downloads: day, week, month
+gh api repos/powerdragonfire/platformio.mcp/traffic/clones --jq '{count,uniques}'   # 14-day clones (repo admin only)
+gh api repos/powerdragonfire/platformio.mcp/traffic/views --jq '{count,uniques}'    # 14-day page views
+```
+
+Tool usage across installs lands in the maintainers' PostHog EU project (341541). `POSTHOG_KEY` in `src/platformio_mcp/analytics.py` holds its write-only `phc_` key; an empty key sends nothing. Tests set `DO_NOT_TRACK=1` in `tests/conftest.py`, so a test run never reaches PostHog.
+
+Users can share their own tool mix with `uvx platformio.mcp stats --json` in an issue or discussion.
 
 ## Reporting a security issue
 
