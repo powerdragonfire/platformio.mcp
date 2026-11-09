@@ -58,6 +58,30 @@ def _find_binary(prefix: str, name: str, cc_path: str) -> str | None:
     return shutil.which(candidate) or shutil.which(name)
 
 
+def find_gdb(cc_path: str) -> str | None:
+    """GDB matching the compiler's target prefix, or None.
+
+    Older toolchains ship `<prefix>gdb` next to the compiler. espressif32 6.x and later ship it in a
+    separate package beside the toolchain (`tool-xtensa-esp-elf-gdb`, `tool-riscv32-esp-elf-gdb`),
+    so sibling `tool-*gdb*` packages under the same packages directory are searched next, then PATH.
+    """
+    prefix = derive_prefix(cc_path)
+    if not prefix:
+        return None
+    exe = ".exe" if cc_path.lower().endswith(".exe") else ""
+    name = Path(prefix + "gdb").name + exe  # e.g. "xtensa-esp32-elf-gdb"
+    beside = Path(prefix + "gdb" + exe)
+    if beside.is_file():
+        return str(beside)
+    cc = Path(cc_path)
+    if len(cc.parents) >= 3:  # <packages>/<toolchain-pkg>/bin/<cc>
+        for pkg in sorted(cc.parents[2].glob("tool-*gdb*")):
+            candidate = pkg / "bin" / name
+            if candidate.is_file():
+                return str(candidate)
+    return shutil.which(name)
+
+
 _META_CACHE: dict[tuple[str, str | None], dict] = {}
 
 

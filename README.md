@@ -9,7 +9,7 @@
   <a href="https://github.com/powerdragonfire/platformio.mcp/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/powerdragonfire/platformio.mcp/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://pypi.org/project/platformio.mcp/"><img alt="PyPI" src="https://img.shields.io/pypi/v/platformio.mcp?color=blue"></a>
   <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-blue">
-  <img alt="Tools" src="https://img.shields.io/badge/MCP%20tools-40-6f42c1">
+  <img alt="Tools" src="https://img.shields.io/badge/MCP%20tools-44-6f42c1">
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
@@ -95,7 +95,7 @@ flowchart LR
     F --> B
 ```
 
-## 🧰 The 40 tools
+## 🧰 The 44 tools
 
 <table>
 <tr><th>Group</th><th>Tools</th><th>What the agent gets back</th></tr>
@@ -148,6 +148,11 @@ flowchart LR
 <td>🐞 <b>Debug</b></td>
 <td><code>pio_debug_start</code> / <code>cmd</code> / <code>stop</code> / <code>list</code></td>
 <td>A live GDB session over <code>pio debug</code>: breakpoints, step, backtrace, variables, with MI records parsed into structured results</td>
+</tr>
+<tr>
+<td>🔁 <b>Test plans</b></td>
+<td><code>pio_test_plan_validate</code> / <code>start</code> / <code>status</code> / <code>cancel</code></td>
+<td>A JSON hardware test plan run for N iterations with per-iteration verdicts and evidence logs that record the git and firmware identity</td>
 </tr>
 </table>
 
