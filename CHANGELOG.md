@@ -6,6 +6,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-09
+
 ### Security
 - CI and release workflows now default the `GITHUB_TOKEN` to `contents: read`. Only the PyPI job (`id-token: write`) and the GitHub release job (`contents: write`) get more.
 
