@@ -6,6 +6,7 @@ import re
 import time
 from typing import Any
 
+from ..analytics import capture_event
 from ..core import (
     check_policy,
     default_envs,
@@ -201,6 +202,10 @@ def pio_flash_and_verify(
     up = pio_upload(project_dir=str(path), env=env, upload_port=upload_port or port)
     upload_s = round(time.monotonic() - t0, 2)
     if not up.get("ok"):
+        capture_event(
+            "firmware_flash_verified",
+            {"verdict": "upload_failed", "upload_s": upload_s},
+        )
         failed: dict[str, Any] = {"ok": False, "verdict": "upload_failed", "summary": "Upload failed, nothing verified. " + up.get("summary", ""), "port": port, "baud": baud, "upload": up}
         if up.get("port_error"):
             failed["error"] = up["error"]
@@ -258,6 +263,16 @@ def pio_flash_and_verify(
         result["summary"] = f"TIMEOUT: flashed OK but neither expect ('{expect}') nor fail_on matched within {timeout_s}s on {port} at {baud} baud; {len(lines)} line(s) seen." + (
             " No output at all: check baud (monitor_speed), that the board prints on this port, or raise timeout_s." if not lines and not port_error else ""
         ) + (f" Port error: {port_error}." if port_error else "")
+    capture_event(
+        "firmware_flash_verified",
+        {
+            "verdict": verdict,
+            "upload_s": upload_s,
+            "verify_s": verify_s,
+            "boot_log_line_count": len(lines),
+            "port_error": bool(port_error),
+        },
+    )
     return result
 
 

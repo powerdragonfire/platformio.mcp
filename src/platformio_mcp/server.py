@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from mcp.server.mcpserver import MCPServer
+from posthog.mcp import instrument
 
-from . import __version__
+from . import __version__, analytics
 from .core import monitors, policy
 from .debugger import debuggers
 from .tools.hardware import test_plan_runs
 from .tools import register_all
+
+mcp_analytics = None
 
 INSTRUCTIONS = """PlatformIO MCP gives you hands on embedded hardware through the PlatformIO CLI.
 
@@ -41,13 +45,34 @@ async def lifespan(server: MCPServer) -> AsyncIterator[None]:
         test_plan_runs.stop_all(wait_s=10.0, stop_monitors=True)
         debuggers.stop_all()
         monitors.stop_all()
+        analytics.capture_log(
+            "mcp_server_stopping",
+            event="mcp_server_stopping",
+            transport="stdio",
+        )
+        if mcp_analytics:
+            try:
+                await asyncio.wait_for(mcp_analytics.flush(), timeout=3)
+            except Exception:
+                pass
 
 
 def create_server() -> MCPServer:
+    global mcp_analytics
+
     mcp = MCPServer(name="platformio", version=__version__, instructions=INSTRUCTIONS + f"\nActive policy: {policy()}.", lifespan=lifespan)
+    if analytics.posthog_client:
+        mcp_analytics = instrument(mcp, analytics.posthog_client)
     register_all(mcp)
     return mcp
 
 
 def serve() -> None:
-    create_server().run(transport="stdio")
+    server = create_server()
+    analytics.capture_log(
+        "mcp_server_started",
+        event="mcp_server_started",
+        transport="stdio",
+        mcp_analytics_enabled=mcp_analytics is not None,
+    )
+    server.run(transport="stdio")

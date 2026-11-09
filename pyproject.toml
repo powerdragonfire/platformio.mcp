@@ -18,6 +18,9 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=2.2",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+    "opentelemetry-sdk>=1.45.2",
+    "posthog>=7.86.3",
     "pyserial>=3.5",
 ]
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..analytics import capture_event
 from ..core import check_policy, guard, monitors
 from ..parsers import classify_port_error, parse_build_result, parse_diagnostics, parse_memory, parse_targets
 from ..pio import DEFAULT_TIMEOUTS, resolve_project_dir, run_pio, tail
@@ -38,7 +39,7 @@ def _run(project_dir: str | None, env: str | None, targets: list[str], extra: li
         parts.append("RAM {:.1f}%, Flash {:.1f}%.".format(memory.get("ram", {}).get("percent", 0), memory.get("flash", {}).get("percent", 0)))
     if res.timed_out:
         parts.append("The command timed out; first builds download toolchains and can take several minutes, retry once.")
-    return {
+    payload = {
         "ok": ok,
         "status": status,
         "summary": " ".join(parts),
@@ -54,6 +55,20 @@ def _run(project_dir: str | None, env: str | None, targets: list[str], extra: li
         "output_tail": tail(res.output, 40),
         "port_error": None if ok else classify_port_error(res.output),
     }
+    if tool == "build":
+        capture_event(
+            "firmware_build_completed",
+            {
+                "status": status,
+                "error_count": len(errors),
+                "warning_count": len(warnings),
+                "environment_count": len(result["environments"]),
+                "duration_s": res.duration_s,
+                "ram_percent": memory.get("ram", {}).get("percent"),
+                "flash_percent": memory.get("flash", {}).get("percent"),
+            },
+        )
+    return payload
 
 
 def _release_port(upload_port: str | None, stop_open_sessions: bool) -> list[str]:

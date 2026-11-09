@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..analytics import capture_event
 from ..core import check_policy, default_envs, env_setting, guard, monitors, project_config, run_json
 from ..pio import resolve_project_dir
 from .analysis import DEFAULT_FAIL_PATTERN
@@ -390,6 +391,18 @@ class TestPlanRunManager:
             run.finished_at = _now()
             run.summary = self._make_summary(run)
             self._write_report(run)
+            capture_event(
+                "hardware_test_plan_completed",
+                {
+                    "status": run.status,
+                    "iterations_configured": run.normalized_plan["run"]["iterations"],
+                    "iterations_completed": len(run.iterations),
+                    "pass_count": run.counts["pass"],
+                    "fail_count": run.counts["fail"],
+                    "timeout_count": run.counts["timeout"],
+                    "infra_error_count": run.counts["infra_error"],
+                },
+            )
 
     def _run_iteration(self, run: TestPlanRun, index: int) -> dict[str, Any]:
         plan = run.normalized_plan

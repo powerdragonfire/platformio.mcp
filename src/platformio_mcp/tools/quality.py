@@ -7,6 +7,7 @@ import os
 import tempfile
 from typing import Any
 
+from ..analytics import capture_event
 from ..core import (
     PolicyError,
     check_policy,
@@ -74,6 +75,10 @@ def pio_test(
             pass
     build_errors = [d.to_dict() for d in parse_diagnostics(res.output) if d.kind == "error"]
     if report is None:
+        capture_event(
+            "firmware_test_completed",
+            {"status": "error", "build_error_count": len(build_errors)},
+        )
         return {"ok": False, "status": "error", "summary": f"pio test produced no report (exit {res.returncode}). " + (f"{len(build_errors)} build error(s); first: {build_errors[0]['file']}:{build_errors[0]['line']}: {build_errors[0]['message']}" if build_errors else "See output_tail."), "build_errors": build_errors, "output_tail": tail(res.output, 40), "log_path": res.log_path}
     s = summarize_test_report(report)
     failed_cases = [c for suite in s["suites"] for c in suite["cases"] if c["status"] in ("FAILED", "ERRORED")]
@@ -84,7 +89,20 @@ def pio_test(
         summary += f" First failure: {c['name']}" + (f" at {c['file']}:{c['line']}" if c.get("file") else "") + (f": {c['message']}" if c.get("message") else "")
     if build_errors:
         summary += f" {len(build_errors)} build error(s) in output."
-    return {"ok": ok, "status": "passed" if ok else "failed", "summary": summary, **s, "build_errors": build_errors[:20], "exit_code": res.returncode, "log_path": res.log_path, "output_tail": tail(res.output, 30)}
+    status = "passed" if ok else "failed"
+    capture_event(
+        "firmware_test_completed",
+        {
+            "status": status,
+            "total_count": s["total"],
+            "failed_count": s["failed"],
+            "errored_count": s["errored"],
+            "skipped_count": s["skipped"],
+            "build_error_count": len(build_errors),
+            "duration_s": s["duration_s"],
+        },
+    )
+    return {"ok": ok, "status": status, "summary": summary, **s, "build_errors": build_errors[:20], "exit_code": res.returncode, "log_path": res.log_path, "output_tail": tail(res.output, 30)}
 
 
 @guard
