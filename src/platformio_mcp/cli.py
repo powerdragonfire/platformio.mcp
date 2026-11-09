@@ -1,4 +1,4 @@
-"""`platformio.mcp` command line: serve (default), install, doctor."""
+"""`platformio.mcp` command line: serve (default), install, doctor, stats."""
 
 from __future__ import annotations
 
@@ -101,6 +101,18 @@ def doctor() -> None:
     print(json.dumps(pio_system_info(), indent=2))
 
 
+def stats(days: int | None, as_json: bool) -> None:
+    from . import analytics
+
+    path = analytics.log_path()
+    events = analytics.read_events(path, days=days)
+    if not events:
+        print(f"No usage recorded yet in {path}." + ("" if analytics.enabled() else " Recording is off (PLATFORMIO_MCP_ANALYTICS=off)."))
+        return
+    summary = analytics.summarize(events)
+    print(json.dumps(summary, indent=2) if as_json else analytics.format_summary(summary, path))
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="platformio.mcp", description="MCP server for PlatformIO. With no subcommand it serves over stdio.")
     parser.add_argument("--version", action="version", version=f"platformio.mcp {__version__}")
@@ -114,6 +126,9 @@ def main(argv: list[str] | None = None) -> None:
     p_install.add_argument("--policy", choices=("full", "build_only", "read_only"), help="set PLATFORMIO_MCP_POLICY for the server")
     p_install.add_argument("--scope", choices=("user", "project"), default="user", help="where the client stores the config (claude-code, cursor)")
     sub.add_parser("doctor", help="print pio_system_info as JSON")
+    p_stats = sub.add_parser("stats", help="summarise the local usage analytics log")
+    p_stats.add_argument("--days", type=int, help="only count calls from the last N days")
+    p_stats.add_argument("--json", action="store_true", help="print the summary as JSON")
 
     args = parser.parse_args(argv)
     if args.cmd == "install":
@@ -122,6 +137,8 @@ def main(argv: list[str] | None = None) -> None:
         install(args.client, args.with_platformio, args.policy, args.scope)
     elif args.cmd == "doctor":
         doctor()
+    elif args.cmd == "stats":
+        stats(args.days, args.json)
     else:
         from .server import serve
 

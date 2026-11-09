@@ -6,6 +6,16 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-09
+
+### Added
+- Usage analytics: one JSON line per tool call in `~/.platformio-mcp/analytics/usage.jsonl` with tool, ok, error code, duration, argument names, and MCP client. Argument values, paths, ports, and serial output are never recorded. `PLATFORMIO_MCP_ANALYTICS=off` disables it, and `PLATFORMIO_MCP_ANALYTICS_URL` also POSTs each event to your own endpoint.
+- Anonymous usage events to PostHog EU Cloud, keyed by a random install id with no person profile. Off under `DO_NOT_TRACK=1`, `PLATFORMIO_MCP_ANALYTICS=local`, or when `CI` is set. The first sending run prints a notice on stderr.
+- `platformio.mcp stats` summarises the usage log: calls, ok rate, and p50/p95 duration per tool, top errors, and clients.
+
+### Changed
+- Releases tag themselves: merging a pull request that bumps the version makes `publish.yml` create the `vX.Y.Z` tag, publish to PyPI, and create the GitHub release. A release no longer needs a separate PR or a manual tag push.
+
 ## [0.3.1] - 2026-11-09
 
 ### Security

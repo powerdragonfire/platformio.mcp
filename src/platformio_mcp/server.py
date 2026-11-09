@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from . import __version__
+from . import __version__, analytics
 from .core import monitors, policy
 from .debugger import debuggers
 from .tools.hardware import test_plan_runs
@@ -43,11 +45,38 @@ async def lifespan(server: MCPServer) -> AsyncIterator[None]:
         monitors.stop_all()
 
 
-def create_server() -> MCPServer:
-    mcp = MCPServer(name="platformio", version=__version__, instructions=INSTRUCTIONS + f"\nActive policy: {policy()}.", lifespan=lifespan)
+class PlatformIOServer(MCPServer):
+    """MCPServer that writes one analytics event per tool call when a recorder is attached."""
+
+    recorder: analytics.Recorder | None = None
+
+    async def call_tool(self, name: str, arguments: dict[str, Any], context: Any = None) -> Any:
+        if self.recorder is None:
+            return await super().call_tool(name, arguments, context)
+        start = time.monotonic()
+        ok, error = False, None
+        try:
+            result = await super().call_tool(name, arguments, context)
+            ok, error = analytics.outcome(result)
+            return result
+        except BaseException as exc:
+            error = type(exc).__name__
+            raise
+        finally:
+            self.recorder.record(
+                tool=name, ok=ok, error=error, duration_ms=int((time.monotonic() - start) * 1000),
+                arg_keys=list(arguments or {}), client=analytics.client_from_context(context),
+            )
+
+
+def create_server(record_usage: bool = False) -> MCPServer:
+    """record_usage=True attaches the analytics recorder unless PLATFORMIO_MCP_ANALYTICS=off."""
+    mcp = PlatformIOServer(name="platformio", version=__version__, instructions=INSTRUCTIONS + f"\nActive policy: {policy()}.", lifespan=lifespan)
+    if record_usage and analytics.enabled():
+        mcp.recorder = analytics.Recorder.from_env()
     register_all(mcp)
     return mcp
 
 
 def serve() -> None:
-    create_server().run(transport="stdio")
+    create_server(record_usage=True).run(transport="stdio")

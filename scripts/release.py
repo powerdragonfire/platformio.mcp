@@ -4,6 +4,7 @@
     python scripts/release.py check [--tag v0.3.0]   verify versions, changelog, tag
     python scripts/release.py bump minor|major|patch|X.Y.Z   update files, roll changelog
     python scripts/release.py notes [X.Y.Z]          print the changelog section
+    python scripts/release.py version                print the current version
 
 Standard library only, so CI runs it before any dependency is installed.
 """
@@ -121,6 +122,11 @@ def cmd_notes(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_version(args: argparse.Namespace) -> int:
+    print(current_version())
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -134,6 +140,8 @@ def main() -> int:
     notes = sub.add_parser("notes")
     notes.add_argument("version", nargs="?")
     notes.set_defaults(func=cmd_notes)
+    version = sub.add_parser("version")
+    version.set_defaults(func=cmd_version)
     args = parser.parse_args()
     return args.func(args)
 

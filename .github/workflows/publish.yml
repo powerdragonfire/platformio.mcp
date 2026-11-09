@@ -1,18 +1,57 @@
 name: Release
 
-# Push a tag like v0.3.0 (after the release PR is merged) to publish.
-# Pushing the tag is the only manual step: tests, PyPI upload and the GitHub release follow.
+# A merge to main that bumps the version releases it: this workflow tags the merge commit,
+# publishes to PyPI and creates the GitHub release. A merge that keeps the version only tests and builds.
+# Pushing a vX.Y.Z tag by hand also publishes, for a release cut from another commit.
+# The tag created here uses GITHUB_TOKEN, which starts no second run, so each version publishes once.
 on:
   push:
+    branches: [main]
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
-  workflow_dispatch: # build and test only; publishing needs a tag
+  workflow_dispatch: # build and test only
 
 permissions:
   contents: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  plan:
+    name: Decide whether this run releases
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      release: ${{ steps.plan.outputs.release }}
+      create_tag: ${{ steps.plan.outputs.create_tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: plan
+        run: |
+          version="$(python3 scripts/release.py version)"
+          tag="v$version"
+          release=false
+          create_tag=false
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+            release=true
+          elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_NAME" = "main" ]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+              echo "$tag already exists: nothing to release."
+            else
+              release=true
+              create_tag=true
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "create_tag=$create_tag" >> "$GITHUB_OUTPUT"
+          echo "version $version, tag $tag, release $release, create_tag $create_tag"
+
   build:
     name: Verify, test and build
+    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -22,8 +61,8 @@ jobs:
       - run: uv python install 3.12
 
       - name: Tag matches every version string and the changelog
-        if: startsWith(github.ref, 'refs/tags/')
-        run: python3 scripts/release.py check --tag "$GITHUB_REF_NAME"
+        if: needs.plan.outputs.release == 'true'
+        run: python3 scripts/release.py check --tag "${{ needs.plan.outputs.tag }}"
 
       - run: uv sync --group dev
       - run: uv run pytest -q
@@ -35,10 +74,27 @@ jobs:
           name: dist
           path: dist/
 
+  tag:
+    name: Tag the release commit
+    needs: [plan, build]
+    if: needs.plan.outputs.create_tag == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG" "$GITHUB_SHA"
+          git push origin "$TAG"
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+
   pypi:
     name: Publish to PyPI
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [plan, build, tag]
+    if: always() && needs.plan.outputs.release == 'true' && needs.build.result == 'success' && (needs.tag.result == 'success' || needs.tag.result == 'skipped')
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -56,8 +112,8 @@ jobs:
 
   github-release:
     name: GitHub release
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: pypi
+    needs: [plan, pypi]
+    if: always() && needs.pypi.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -70,6 +126,7 @@ jobs:
       - name: Create release from the changelog section
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
         run: |
-          python3 scripts/release.py notes "$GITHUB_REF_NAME" > notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+          python3 scripts/release.py notes "$TAG" > notes.md
+          gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md --verify-tag

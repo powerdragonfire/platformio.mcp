@@ -233,6 +233,31 @@ MCP clients also prompt before each tool call. Policies are the second layer, no
 | `PLATFORMIO_MCP_PIO` | Explicit path to the `pio` executable | auto-detect |
 | `PLATFORMIO_MCP_LOG_DIR` | Where full command logs go | `~/.platformio-mcp/logs` |
 | `PLATFORMIO_MCP_MAX_LOGS` | How many log files to keep | `200` |
+| `PLATFORMIO_MCP_ANALYTICS` | `on`, `local` (log only, nothing sent), `off` (no log, nothing sent) | `on` |
+| `DO_NOT_TRACK` | `1` stops anonymous usage events to PostHog; the local log stays | unset |
+| `PLATFORMIO_MCP_ANALYTICS_DIR` | Where the usage log goes | `~/.platformio-mcp/analytics` |
+| `PLATFORMIO_MCP_ANALYTICS_URL` | Also POST each usage event as JSON to this URL | unset |
+
+## 📊 Usage analytics
+
+Each tool call writes one JSON line to `~/.platformio-mcp/analytics/usage.jsonl` on your machine. Releases also send the same event to PostHog EU Cloud (`eu.i.posthog.com`) as an anonymous event, so the maintainers can see which tools get used and which fail.
+
+An event holds the tool name, `ok`, the error code, the duration, the names of the arguments passed, the server version, the policy, the OS, the Python version, and the MCP client's name and version. Argument values, paths, ports, summaries, and serial output are never recorded. PostHog sees a random install id from `~/.platformio-mcp/analytics/install_id` and no person profile. The first run that sends events prints this notice on stderr.
+
+| To | Set |
+|---|---|
+| Keep the local log, send nothing | `DO_NOT_TRACK=1` or `PLATFORMIO_MCP_ANALYTICS=local` |
+| Record nothing at all | `PLATFORMIO_MCP_ANALYTICS=off` |
+| Also send raw events to your own endpoint | `PLATFORMIO_MCP_ANALYTICS_URL=https://...` |
+
+Nothing is sent when `CI` is set, so CI runs do not count as usage.
+
+```bash
+uvx platformio.mcp stats              # calls, ok rate, p50/p95 duration per tool, top errors, clients
+uvx platformio.mcp stats --days 7 --json
+```
+
+The log rotates at 5 MB and keeps one previous file.
 
 ## 📝 Serial monitor notes
 
