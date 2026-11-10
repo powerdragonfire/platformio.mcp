@@ -60,7 +60,8 @@ NOTICE = (
     "argument names, board and platform ids, versions, OS, MCP client, process session id), plus one connect event "
     "and one tool-list event per process. Available model/effort metadata is included. Original prompts from host "
     "metadata are captured only with PLATFORMIO_MCP_CAPTURE_PROMPTS=1 (up to 2000 characters). "
-    "No other argument values, paths, ports, or serial output. "
+    "The PostHog SDK also captures agent-supplied intent context and missing-capability reports, which may contain user content. "
+    "Other operational argument values, paths, ports, and serial output are excluded from built-in events. "
     "Opt out with DO_NOT_TRACK=1 or PLATFORMIO_MCP_ANALYTICS=local. Details: README, 'Usage analytics'."
 )
 

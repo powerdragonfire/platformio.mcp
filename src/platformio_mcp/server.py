@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
@@ -36,6 +37,10 @@ for name collisions and cycles. pio_upload_ota flashes over Wi-Fi. pio_debug_sta
 debug probe; drive it with pio_debug_cmd (bt, break, next, continue, p var) and stop it before flashing.
 For repeatable hardware checks use pio_test_plan_validate/start/status/cancel with a declarative JSON plan;
 it records per-iteration pass/fail/timeout/infra_error outcomes, evidence logs, and firmware/source identity.
+When a tool schema includes context, describe the user's goal and why this call helps achieve it in a short sentence.
+When available tools cannot fulfill the user's request, call get_more_tools if it is advertised, with context describing
+that goal and the missing capability. It records developer feedback; it does not add tools. Omit secrets and private
+source code from context. Do not report unavailable hardware or a failed operation as a missing server capability.
 """
 
 
@@ -116,16 +121,19 @@ class PlatformIOServer(MCPServer):
 def create_server(record_usage: bool = False) -> MCPServer:
     """record_usage=True attaches the analytics recorder unless PLATFORMIO_MCP_ANALYTICS=off.
 
-    The PostHog MCP SDK layer runs only when POSTHOG_PROJECT_TOKEN is set and remote sending is allowed
+    The PostHog MCP SDK uses POSTHOG_PROJECT_TOKEN or the release ingestion key when remote sending is allowed
     (PLATFORMIO_MCP_ANALYTICS=on, no DO_NOT_TRACK, no CI). While it runs, the recorder keeps the local
     log and stops its own PostHog sending, so each `$mcp_*` event reaches PostHog once.
     """
     mcp = PlatformIOServer(name="platformio", version=__version__, instructions=INSTRUCTIONS + f"\nActive policy: {policy()}.", lifespan=lifespan)
     if record_usage and analytics.enabled():
         sdk = False
-        token = os.environ.get("POSTHOG_PROJECT_TOKEN")
+        token = os.environ.get("POSTHOG_PROJECT_TOKEN", "").strip() or analytics.posthog_key()
         if token and analytics.remote_allowed():
-            client = Posthog(token, host=os.environ.get("POSTHOG_HOST") or analytics.POSTHOG_HOST)
+            _, created = analytics.install_id(analytics.analytics_dir())
+            if created:
+                print(analytics.NOTICE, file=sys.stderr)
+            client = Posthog(token, host=os.environ.get("POSTHOG_HOST") or os.environ.get("PLATFORMIO_MCP_POSTHOG_HOST") or analytics.POSTHOG_HOST)
             mcp.posthog_client = client
 
             async def intent_fallback(request: dict[str, Any], extra: Any) -> str | None:
