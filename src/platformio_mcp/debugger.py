@@ -644,7 +644,16 @@ class DebugManager:
             raise DebugStartError("start_timeout", f"gdb did not reach a prompt within {timeout_s:.0f}s; the debug server may be waiting on the probe or `load` is still flashing. Raise timeout_s or check the probe.", output)
         # PlatformIO resumes the target to `debug_init_break` (default: tbreak main) once .pioinit finishes.
         remaining = max(0.0, min(init_break_wait_s, timeout_s - (time.monotonic() - t0)))
-        session.wait_for_stop(prompt_at, remaining)
+        stop_at = session.wait_for_stop(prompt_at, remaining)
+        if stop_at is not None:
+            # Consume the init stop's prompt before a caller can send its first command.
+            # Otherwise a delayed startup prompt can complete that command prematurely.
+            remaining = max(0.0, timeout_s - (time.monotonic() - t0))
+            if session.wait_for_prompt(stop_at + 1, remaining) is None and not session.closed:
+                raise DebugStartError(
+                    "start_timeout", "gdb stopped during initialization but did not return to a prompt.",
+                    session.text_since(0),
+                )
         if session.closed:
             output = session.text_since(0)
             code, why = classify_start_failure(output)

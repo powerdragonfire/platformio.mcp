@@ -13,7 +13,7 @@ from posthog import Posthog
 from posthog.mcp import instrument
 from posthog.mcp.types import MCPAnalyticsOptions
 
-from . import __version__, analytics
+from . import __version__, analytics, telemetry
 from .core import monitors, policy
 from .debugger import debuggers
 from .tools.hardware import test_plan_runs
@@ -109,6 +109,7 @@ class PlatformIOServer(MCPServer):
                 tool=name, ok=ok, error=error, duration_ms=int((time.monotonic() - start) * 1000),
                 arg_keys=list(arguments or {}), client=analytics.client_from_context(context),
                 protocol_version=analytics.protocol_from_context(context), ids=analytics.public_ids(arguments),
+                metadata=telemetry.context_meta(context),
             )
 
 
@@ -135,7 +136,10 @@ def create_server(record_usage: bool = False) -> MCPServer:
                 return None
 
             mcp.posthog_analytics = instrument(
-                mcp, client, MCPAnalyticsOptions(context=True, intent_fallback=intent_fallback)
+                mcp, client, MCPAnalyticsOptions(
+                    context=True, intent_fallback=intent_fallback, report_missing=True,
+                    capture_model=True, event_properties=telemetry.sdk_properties,
+                )
             )
             sdk = True
         mcp.recorder = analytics.Recorder.from_env(remote=not sdk)

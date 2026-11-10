@@ -44,14 +44,36 @@ Use `"args": ["platformio.mcp[platformio]"]` to bundle PlatformIO Core.
 </details>
 
 <details>
-<summary><b>As a plugin</b> (Claude Code, Cursor: server + a skill that teaches the loop)</summary>
+<summary><b>As a plugin</b> (Claude Code, Codex, compatible plugin clients)</summary>
 
-The repo follows the [Open Plugins](https://agent-plugins.org) layout: `.mcp.json`, `skills/platformio/SKILL.md`, `rules/platformio.mdc`, `plugin.json`.
+Install [uv](https://docs.astral.sh/uv/) first. The plugin bundles PlatformIO Core automatically through `platformio.mcp[platformio]`, plus a skill that teaches the build, flash, and verify loop.
+
+In Claude Code, use `/plugin` (singular):
+
+```text
+/plugin marketplace add powerdragonfire/platformio.mcp
+/plugin install platformio@platformio.mcp
+```
+
+The same installation from a terminal:
 
 ```bash
 claude plugin marketplace add powerdragonfire/platformio.mcp   # Claude Code
 claude plugin install platformio@platformio.mcp
 ```
+
+For Codex, add the repository marketplace and install the plugin:
+
+```bash
+codex plugin marketplace add powerdragonfire/platformio.mcp
+codex plugin add platformio@platformio.mcp
+```
+
+In Codex's plugin browser (`/plugins` where supported), add `powerdragonfire/platformio.mcp` as a marketplace source and select **PlatformIO**. Restart the client or open a new session after installation. Remove any separately configured `platformio` MCP server before enabling the plugin to avoid duplicate registrations.
+
+The repo includes portable `plugin.json` and `mcp.json`, Claude compatibility files, a Codex manifest and marketplace, and `skills/platformio/SKILL.md`. These are repository marketplace installs, not a claim of listing in a public plugin directory. See the [OpenAI packaging reference](https://developers.openai.com/plugins/build/plugins) and [Claude plugin reference](https://code.claude.com/docs/en/plugins-reference).
+
+Other MCP clients can use `uvx platformio.mcp install --print --with-platformio` and paste the resulting configuration. Plugin commands belong to the client; there is no universal `/plugins` command across LLM applications.
 </details>
 
 <details>
@@ -261,6 +283,40 @@ Every PostHog event also carries `$session_id` (a random id per server process, 
 | Also send raw events to your own endpoint | `PLATFORMIO_MCP_ANALYTICS_URL=https://...` |
 
 Nothing is sent to PostHog when `CI` is set, so CI runs do not count as usage.
+
+#### Version, model, effort, and optional prompts
+
+Both analytics paths report the installed server release as `$mcp_server_version` and `platformio_mcp_version`. These identify the running Python package, which can differ from a cached plugin manifest version.
+
+Tool events also record available model and reasoning-effort metadata. Codex supplies `model` and `reasoning_effort` in `_meta["x-codex-turn-metadata"]` ([upstream implementation](https://github.com/openai/codex/pull/21219)). Other hosts can supply the same fields in `_meta["platformio.mcp"]`. Unknown values are omitted; no model or effort is inferred from a client name. Model names are bounded identifiers; effort accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`.
+
+| Property | Meaning |
+| --- | --- |
+| `$mcp_llm_model`, `$mcp_llm_model_source` | Model identifier and `client_metadata`, SDK `self_reported`, or `configuration` source |
+| `reasoning_effort`, `reasoning_effort_source` | Supplied effort and `client_metadata` or `configuration` source |
+| `user_prompt`, `user_prompt_source`, `user_prompt_truncated` | Optional original prompt, host metadata source, and truncation flag |
+
+If the host cannot send model or effort metadata, explicitly set `PLATFORMIO_MCP_MODEL` and `PLATFORMIO_MCP_REASONING_EFFORT` in the MCP server environment. Per-call metadata takes precedence. Keep configured values aligned with the client's selected model and effort; they are configuration claims, not automatic detection. With the SDK active, its optional `llm_model` argument remains available and takes precedence over configured model fallback.
+
+Original prompt capture is **off by default**. A user must set `PLATFORMIO_MCP_CAPTURE_PROMPTS=1` in their MCP server environment and their host must explicitly attach the prompt to each tool request:
+
+```json
+{
+  "_meta": {
+    "platformio.mcp": {
+      "model": "actual-model-id",
+      "reasoning_effort": "high",
+      "prompt": "Build the firmware and inspect the serial output"
+    }
+  }
+}
+```
+
+The server retains at most the first 2,000 characters of this prompt, including in local logs and custom endpoint events. Enabled remote delivery sends it to PostHog. Prompt text is user content and may contain secrets; no complete secret removal is promised. Only explicitly allowlisted metadata is captured, with no scraping of client chat files. Disabling this option stops future original prompt capture; it does not delete previously collected events. Existing `off`, `local`, `DO_NOT_TRACK`, and `CI` delivery controls still apply.
+
+Ordinary Claude/Codex plugin installation does not automatically supply original prompts through this custom metadata contract. A host integration must provide it. SDK agent `context` remains separate intent text, not a copy of the original conversation. These prompt settings control only the new `user_prompt` field, not the existing SDK context capture described below.
+
+When the SDK is active, `report_missing=True` exposes a `get_more_tools` tool. Agents can use it to report unsupported capabilities; the SDK sends `$mcp_missing_capability` events containing the supplied context to PostHog.
 
 Set `POSTHOG_PROJECT_TOKEN` to use the PostHog MCP SDK for PostHog delivery instead. The SDK starts only when analytics mode is `on` (the default), `DO_NOT_TRACK` and `CI` are unset or false (`0`, `false`, or `no`). `POSTHOG_HOST` overrides its default EU host. While the SDK runs, the built-in recorder keeps the local tool-call log and custom endpoint delivery but stops its own PostHog sending, preventing duplicate events. The SDK controls its event format and batching; the event table above describes the built-in recorder. Normal server shutdown flushes and closes the SDK client; cleanup failures do not prevent shutdown. Importing the server creates no PostHog client.
 

@@ -196,6 +196,19 @@ def test_timeout_then_interrupt(manager, project):
 
 
 @WINDOWS_FLAKY
+def test_start_consumes_delayed_stop_prompt(project, monkeypatch):
+    monkeypatch.setattr(debugger, "require_pio", lambda: ["pio"])
+    mgr = DebugManager(opener=fake_opener("delayed_stop_prompt"))
+    try:
+        session = mgr.start(str(project), env="dbg")
+        result = session.run("hang", timeout_s=0.5)
+        assert result["timed_out"] is True and result["running"] is True
+        assert result["stopped"] is None
+    finally:
+        mgr.stop_all()
+
+
+@WINDOWS_FLAKY
 def test_stop_sends_gdb_exit_and_clears_session(manager, project):
     sid = debug_tools.pio_debug_start(project_dir=str(project), env="dbg")["session_id"]
     r = debug_tools.pio_debug_stop(sid)

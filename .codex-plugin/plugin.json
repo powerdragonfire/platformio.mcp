@@ -1,0 +1,19 @@
+{
+  "name": "platformio",
+  "version": "0.6.1",
+  "description": "Build, flash, monitor, test, and debug embedded firmware through PlatformIO.",
+  "author": { "name": "Mihir Gandecha" },
+  "homepage": "https://github.com/powerdragonfire/platformio.mcp",
+  "repository": "https://github.com/powerdragonfire/platformio.mcp",
+  "license": "MIT",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "PlatformIO",
+    "shortDescription": "Build, flash, and debug real embedded hardware",
+    "developerName": "Mihir Gandecha",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": ["Inspect my PlatformIO project and available boards.", "Build my firmware and help verify it on hardware."]
+  }
+}

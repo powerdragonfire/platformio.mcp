@@ -4,6 +4,8 @@ An event holds the tool name, ok/error code, duration, the names of the argument
 version, the policy, the OS, the Python version, the MCP client's name and version, and the protocol
 version. The `board` and `platform` argument values are kept when they look like PlatformIO registry ids.
 Other argument values, summaries, paths, ports, and serial output never enter an event.
+Allowlisted host metadata can supply model and effort. Explicit local prompt opt-in also permits a
+bounded original prompt from host metadata; no chat history is read.
 
 Every event goes to a local JSONL log (~/.platformio-mcp/analytics/usage.jsonl). When the release carries a
 PostHog project key, events also go to PostHog EU Cloud as anonymous events keyed by a random install id,
@@ -34,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from . import __version__
+from . import __version__, telemetry
 from .core import policy
 
 SCHEMA_VERSION = 1
@@ -56,7 +58,9 @@ POSTHOG_HOST = "https://eu.i.posthog.com"
 NOTICE = (
     "platformio.mcp sends anonymous usage events to PostHog EU: one per tool call (tool name, ok/error, duration, "
     "argument names, board and platform ids, versions, OS, MCP client, process session id), plus one connect event "
-    "and one tool-list event per process. No other argument values, paths, ports, or serial output. "
+    "and one tool-list event per process. Available model/effort metadata is included. Original prompts from host "
+    "metadata are captured only with PLATFORMIO_MCP_CAPTURE_PROMPTS=1 (up to 2000 characters). "
+    "No other argument values, paths, ports, or serial output. "
     "Opt out with DO_NOT_TRACK=1 or PLATFORMIO_MCP_ANALYTICS=local. Details: README, 'Usage analytics'."
 )
 
@@ -116,6 +120,7 @@ def posthog_event(event: dict[str, Any], distinct_id: str) -> dict[str, Any]:
         "$mcp_error_type": event["error"],
         "$mcp_duration_ms": event["duration_ms"],
         "$mcp_input_keys": event["arg_keys"],
+        **event.get("metadata", {}),
         **_common_properties(event, client),
     }
     return {"event": "$mcp_tool_call", "distinct_id": distinct_id, "properties": properties, "timestamp": event["ts"]}
@@ -131,6 +136,7 @@ def _common_properties(event: dict[str, Any], client: dict[str, Any]) -> dict[st
         "$mcp_client_version": client.get("version"),
         "$mcp_server_name": "platformio",
         "$mcp_server_version": event["server_version"],
+        "platformio_mcp_version": event["server_version"],
         "session": event["session"],
         "policy": event["policy"],
         "os": event["os"],
@@ -217,9 +223,9 @@ class Recorder:
 
     def record(
         self, *, tool: str, ok: bool, error: str | None, duration_ms: int, arg_keys: list[str], client: dict[str, str] | None,
-        protocol_version: str | None = None, ids: dict[str, str] | None = None,
+        protocol_version: str | None = None, ids: dict[str, str] | None = None, metadata: Any = None,
     ) -> dict[str, Any]:
-        """ids holds `board` and `platform` from public_ids(); no other argument value enters an event."""
+        """Keep public ids and allowlisted host metadata; original prompt text needs explicit local opt-in."""
         event = {
             "v": SCHEMA_VERSION,
             "ts": _now(),
@@ -232,6 +238,9 @@ class Recorder:
             **self._context(client, protocol_version),
             **{k: v for k, v in (ids or {}).items() if k in PUBLIC_ID_ARGS},
         }
+        properties = telemetry.metadata_properties(metadata)
+        if properties:
+            event["metadata"] = properties
         try:
             self._append(event)
         except OSError as exc:  # a full disk or read-only home must never break a tool call

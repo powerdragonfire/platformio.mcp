@@ -6,6 +6,17 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-10
+
+### Added
+- Report available model and reasoning-effort metadata with provenance on both analytics paths, with explicit environment fallbacks. Expose the running release as `platformio_mcp_version` alongside `$mcp_server_version`.
+- Optional original prompt capture from explicit host metadata, disabled by default and bounded to 2,000 characters when users enable `PLATFORMIO_MCP_CAPTURE_PROMPTS=1`.
+- Codex marketplace and compatibility manifest, portable MCP configuration, and documented Claude/Codex plugin installation. Plugin installs bundle PlatformIO Core through the existing extra.
+- Enable the PostHog SDK's missing-capability reporting tool.
+
+### Fixed
+- Wait for the GDB prompt following the initial stop before accepting commands, preventing a delayed startup prompt from making a running command appear complete on macOS.
+
 ## [0.6.0] - 2026-11-10
 
 ### Changed
