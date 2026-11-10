@@ -196,7 +196,8 @@ def test_timeout_then_interrupt(manager, project):
 
 
 @WINDOWS_FLAKY
-def test_start_consumes_delayed_stop_prompt(project):
+def test_start_consumes_delayed_stop_prompt(project, monkeypatch):
+    monkeypatch.setattr(debugger, "require_pio", lambda: ["pio"])
     mgr = DebugManager(opener=fake_opener("delayed_stop_prompt"))
     try:
         session = mgr.start(str(project), env="dbg")
