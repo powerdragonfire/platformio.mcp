@@ -3,10 +3,7 @@
     "platformio": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["platformio.mcp"],
-      "env": {
-        "PLATFORMIO_MCP_POLICY": "${PLATFORMIO_MCP_POLICY:-full}"
-      }
+      "args": ["platformio.mcp[platformio]"]
     }
   }
 }

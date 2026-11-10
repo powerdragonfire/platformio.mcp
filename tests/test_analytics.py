@@ -444,3 +444,46 @@ async def test_sdk_captures_intent_with_empty_context_fallback(usage_dir, monkey
         assert event["$mcp_intent"] == "Invoking pio_monitor_list"
         assert event["$mcp_intent_source"] == "inferred"
     assert read_events(usage_dir)[0]["ok"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_sdk", [False, True])
+@pytest.mark.parametrize("capture_prompts", [False, True])
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+async def test_client_metadata_reaches_both_analytics_paths(usage_dir, monkeypatch, use_sdk, capture_prompts, mode):
+    from mcp import Client
+    from mcp.types import RequestParamsMeta
+    from platformio_mcp import server
+
+    events = []
+
+    class CapturingPosthog(FakePosthog):
+        def capture(self, event, **payload):
+            if event == "$mcp_tool_call":
+                events.append(payload["properties"])
+
+    monkeypatch.setattr(server, "Posthog", CapturingPosthog)
+    monkeypatch.setenv("DO_NOT_TRACK", "0")
+    monkeypatch.setenv("CI", "0")
+    monkeypatch.setenv("PLATFORMIO_MCP_POSTHOG_KEY", "")
+    monkeypatch.setenv("POSTHOG_PROJECT_TOKEN", "phc_test" if use_sdk else "")
+    monkeypatch.setenv("PLATFORMIO_MCP_CAPTURE_PROMPTS", "1" if capture_prompts else "0")
+    mcp = create_server(record_usage=True)
+    meta = RequestParamsMeta(**{
+        "x-codex-turn-metadata": {"model": "client-model", "reasoning_effort": "high"},
+        "platformio.mcp": {"prompt": "Inspect serial monitor status"},
+        "unrelated": "metadata-must-not-leak",
+    })
+    async with Client(mcp, mode=mode) as client:
+        await client.call_tool("pio_monitor_list", {}, meta=meta)
+    [local] = read_events(usage_dir)
+    properties = events[0] if use_sdk else analytics.posthog_event(local, "test")["properties"]
+    assert properties["$mcp_server_version"] == __version__
+    assert properties["platformio_mcp_version"] == __version__
+    assert properties["$mcp_llm_model"] == "client-model"
+    assert properties["$mcp_llm_model_source"] == "client_metadata"
+    assert properties["reasoning_effort"] == "high"
+    assert ("user_prompt" in properties) is capture_prompts
+    if capture_prompts:
+        assert properties["user_prompt"] == "Inspect serial monitor status"
+    assert "metadata-must-not-leak" not in json.dumps(properties)

@@ -64,6 +64,8 @@ if MODE != "no_stop":
     prompt()
     time.sleep(0.05)
     emit(STOP_MAIN)
+    if MODE == "delayed_stop_prompt":
+        time.sleep(0.2)
     prompt()
 
 hang_lock = threading.Lock()

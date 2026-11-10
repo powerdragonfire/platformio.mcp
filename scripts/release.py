@@ -30,6 +30,7 @@ VERSION_FILES: list[tuple[str, str, int]] = [
     ("plugin.json", rf'(?m)^(\s*"version": ")({SEMVER})(")', 1),
     ("lhm.plugin.json", rf'(?m)^(\s*"version": ")({SEMVER})(")', 1),
     (".claude-plugin/plugin.json", rf'(?m)^(\s*"version": ")({SEMVER})(")', 1),
+    (".codex-plugin/plugin.json", rf'(?m)^(\s*"version": ")({SEMVER})(")', 1),
     (".claude-plugin/marketplace.json", rf'(?m)^(\s*"version": ")({SEMVER})(")', 2),
     ("uv.lock", rf'(?m)^(name = "platformio-mcp"\nversion = ")({SEMVER})(")', 1),
 ]
