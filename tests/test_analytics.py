@@ -305,3 +305,98 @@ async def test_board_and_platform_ids_are_sent_and_other_values_are_not(posthog,
     raw = json.dumps(posthog.received)
     for value in ("my-secret-project", "secret-query", "arduino", "platform-private", "192.168.1.20", str(tmp_path)):
         assert value not in raw
+
+
+class FakePosthog:
+    def __init__(self, token, host=None):
+        self.token, self.host, self.shut = token, host, False
+
+    def shutdown(self):
+        self.shut = True
+
+
+@pytest.fixture
+def sdk(usage_dir, monkeypatch):
+    """Record instrument() calls; allow remote sending unless a test opts out."""
+    from platformio_mcp import server
+
+    calls = []
+
+    class FakeAnalytics:
+        flushed = False
+
+        async def flush(self):
+            FakeAnalytics.flushed = True
+
+    def fake_instrument(mcp, client=None, options=None):
+        calls.append(client)
+        return FakeAnalytics()
+
+    monkeypatch.setattr(server, "instrument", fake_instrument)
+    monkeypatch.setattr(server, "Posthog", FakePosthog)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("PLATFORMIO_MCP_POSTHOG_KEY", "phc_test")
+    monkeypatch.setenv("POSTHOG_PROJECT_TOKEN", "phc_sdk")
+    monkeypatch.delenv("POSTHOG_HOST", raising=False)
+    return calls
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"PLATFORMIO_MCP_ANALYTICS": "off"},
+        {"PLATFORMIO_MCP_ANALYTICS": "local"},
+        {"DO_NOT_TRACK": "1"},
+        {"CI": "true"},
+        {"POSTHOG_PROJECT_TOKEN": ""},
+    ],
+)
+def test_sdk_layer_respects_opt_outs(sdk, monkeypatch, env):
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    mcp = create_server(record_usage=True)
+    assert sdk == []
+    assert mcp.posthog_client is None
+
+
+def test_sdk_layer_off_without_record_usage(sdk):
+    create_server(record_usage=False)
+    assert sdk == []
+
+
+def test_sdk_layer_replaces_recorder_posthog_sending(sdk):
+    mcp = create_server(record_usage=True)
+    [client] = sdk
+    assert client.token == "phc_sdk"
+    assert client.host == analytics.POSTHOG_HOST
+    assert mcp.recorder is not None
+    assert mcp.recorder.posthog is None  # one sender per event: the SDK
+
+
+def test_recorder_keeps_posthog_without_sdk_token(sdk, monkeypatch):
+    monkeypatch.delenv("POSTHOG_PROJECT_TOKEN")
+    mcp = create_server(record_usage=True)
+    assert sdk == []
+    assert mcp.recorder.posthog is not None
+
+
+@pytest.mark.asyncio
+async def test_lifespan_flushes_and_shuts_down_sdk_client(sdk):
+    from platformio_mcp.server import lifespan
+
+    mcp = create_server(record_usage=True)
+    async with lifespan(mcp):
+        pass
+    assert mcp.posthog_analytics.flushed
+    assert mcp.posthog_client.shut
+
+
+def test_server_module_has_no_import_side_effects():
+    from pathlib import Path
+
+    from platformio_mcp import server
+
+    source = Path(server.__file__).read_text()
+    assert "os._exit" not in source
+    assert not any(isinstance(v, FakePosthog) or type(v).__name__ == "Posthog" for v in vars(server).values())

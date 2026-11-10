@@ -18,6 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=2.2",
+    "posthog>=7.86.6,<8",
     "pyserial>=3.5",
 ]
 
