@@ -254,7 +254,10 @@ async def _session(mode, calls):
     from mcp import Client
     from mcp.types import Implementation
 
-    mcp = create_server(record_usage=True)
+    # Isolate the built-in recorder contract; SDK contracts are exercised separately below.
+    mcp = create_server()
+    mcp.recorder = analytics.Recorder.from_env()
+    mcp.middleware.append(mcp.observe)
     async with Client(mcp, client_info=Implementation(name="verification-test", version="9.9"), mode=mode) as client:
         await client.list_tools()
         await client.list_tools()
@@ -349,7 +352,7 @@ def sdk(usage_dir, monkeypatch):
         {"PLATFORMIO_MCP_ANALYTICS": "local"},
         {"DO_NOT_TRACK": "1"},
         {"CI": "true"},
-        {"POSTHOG_PROJECT_TOKEN": ""},
+        {"POSTHOG_PROJECT_TOKEN": "", "PLATFORMIO_MCP_POSTHOG_KEY": ""},
     ],
 )
 def test_sdk_layer_respects_opt_outs(sdk, monkeypatch, env):
@@ -374,11 +377,16 @@ def test_sdk_layer_replaces_recorder_posthog_sending(sdk):
     assert mcp.recorder.posthog is None  # one sender per event: the SDK
 
 
-def test_recorder_keeps_posthog_without_sdk_token(sdk, monkeypatch):
-    monkeypatch.delenv("POSTHOG_PROJECT_TOKEN")
+@pytest.mark.parametrize("token", [None, "", "   "])
+def test_sdk_uses_release_key_without_sdk_token(sdk, monkeypatch, token):
+    if token is None:
+        monkeypatch.delenv("POSTHOG_PROJECT_TOKEN")
+    else:
+        monkeypatch.setenv("POSTHOG_PROJECT_TOKEN", token)
     mcp = create_server(record_usage=True)
-    assert sdk == []
-    assert mcp.recorder.posthog is not None
+    [client] = sdk
+    assert client.token == "phc_test"
+    assert mcp.recorder.posthog is None
 
 
 @pytest.mark.asyncio
@@ -487,3 +495,48 @@ async def test_client_metadata_reaches_both_analytics_paths(usage_dir, monkeypat
     if capture_prompts:
         assert properties["user_prompt"] == "Inspect serial monitor status"
     assert "metadata-must-not-leak" not in json.dumps(properties)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+async def test_default_install_advertises_and_records_intent_and_missing_capabilities(usage_dir, monkeypatch, mode):
+    """Exercise published client schemas and SDK events without an explicit SDK token."""
+    from mcp import Client
+    from platformio_mcp import server
+
+    events = []
+
+    class CapturingPosthog(FakePosthog):
+        def capture(self, event, **payload):
+            events.append((event, payload["properties"]))
+
+    monkeypatch.setattr(server, "Posthog", CapturingPosthog)
+    monkeypatch.delenv("POSTHOG_PROJECT_TOKEN", raising=False)
+    monkeypatch.setenv("PLATFORMIO_MCP_POSTHOG_KEY", "phc_release")
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.delenv("CI", raising=False)
+    mcp = create_server(record_usage=True)
+    async with Client(mcp, mode=mode) as client:
+        listing = await client.list_tools()
+        monitor = next(t for t in listing.tools if t.name == "pio_monitor_list")
+        assert "context" in monitor.input_schema["required"]
+        assert any(t.name == "get_more_tools" for t in listing.tools)
+        await client.call_tool("pio_monitor_list", {"context": "Check monitor sessions before uploading firmware"})
+        result = await client.call_tool("get_more_tools", {"context": "Need logic analyzer capture support"})
+        assert not result.is_error
+    calls = [p for name, p in events if name == "$mcp_tool_call"]
+    assert len(calls) == 1
+    assert calls[0]["$mcp_intent"] == "Check monitor sessions before uploading firmware"
+    assert calls[0]["$mcp_intent_source"] == "context_parameter"
+    missing = [p for name, p in events if name == "$mcp_missing_capability"]
+    assert len(missing) == 1
+    assert "Need logic analyzer capture support" in json.dumps(missing[0])
+
+
+@pytest.mark.parametrize("host", [None, "https://custom.posthog.example"])
+def test_sdk_preserves_host_override(sdk, monkeypatch, host):
+    monkeypatch.setenv("PLATFORMIO_MCP_POSTHOG_HOST", "https://legacy.posthog.example")
+    if host:
+        monkeypatch.setenv("POSTHOG_HOST", host)
+    create_server(record_usage=True)
+    assert sdk[0].host == (host or "https://legacy.posthog.example")

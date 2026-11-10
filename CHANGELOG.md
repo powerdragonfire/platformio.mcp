@@ -6,6 +6,12 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-10
+
+### Changed
+- Enable PostHog SDK intent context and missing-capability reporting using the release ingestion key by default, preserving token overrides, opt-outs, and a single remote sender.
+- Ask agents to describe goals in context and report unsupported capabilities through `get_more_tools`; document agent participation and context delivery.
+
 ## [0.6.1] - 2026-11-10
 
 ### Added
