@@ -242,7 +242,17 @@ MCP clients also prompt before each tool call. Policies are the second layer, no
 
 Each tool call writes one JSON line to `~/.platformio-mcp/analytics/usage.jsonl` on your machine. Releases also send the same event to PostHog EU Cloud (`eu.i.posthog.com`) as an anonymous event, so the maintainers can see which tools get used and which fail.
 
-An event holds the tool name, `ok`, the error code, the duration, the names of the arguments passed, the server version, the policy, the OS, the Python version, and the MCP client's name and version. Argument values, paths, ports, summaries, and serial output are never recorded. PostHog sees a random install id from `~/.platformio-mcp/analytics/install_id` and no person profile. The first run that sends events prints this notice on stderr.
+An event holds the tool name, `ok`, the error code, the duration, the names of the arguments passed, the server version, the policy, the OS, the Python version, the MCP client's name and version, and the MCP protocol version. When a tool receives a `board` or `platform` argument shaped like a PlatformIO registry id (`esp32dev`, `espressif32`), the event keeps that id. A path or URL in those arguments is dropped. All other argument values, paths, ports, summaries, and serial output are never recorded. PostHog sees a random install id from `~/.platformio-mcp/analytics/install_id` and no person profile. The first run that sends events prints this notice on stderr.
+
+PostHog receives three event types, sent in batches of up to 20 events or every 5 seconds, and flushed when the server shuts down:
+
+| Event | When | Extra properties |
+|---|---|---|
+| `$mcp_tool_call` | each tool call | `$mcp_tool_name`, `$mcp_is_error`, `$mcp_error_type`, `$mcp_duration_ms`, `$mcp_input_keys`, `board`, `platform` |
+| `$mcp_initialize` | once per process, when the client connects | none |
+| `$mcp_tools_list` | once per process, on the first tool list | `$mcp_listed_tool_names` |
+
+Every PostHog event also carries `$session_id` (a random id per server process, which is one client connection over stdio), `$mcp_source`, `$mcp_client_name`, `$mcp_client_version`, `$mcp_protocol_version`, `$mcp_server_name`, `$mcp_server_version`, `$lib`, `$lib_version`, `policy`, `os`, and `python`. The local log and `PLATFORMIO_MCP_ANALYTICS_URL` get tool calls only, one POST per event.
 
 | To | Set |
 |---|---|

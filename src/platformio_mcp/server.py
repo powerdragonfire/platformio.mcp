@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -43,12 +43,40 @@ async def lifespan(server: MCPServer) -> AsyncIterator[None]:
         test_plan_runs.stop_all(wait_s=10.0, stop_monitors=True)
         debuggers.stop_all()
         monitors.stop_all()
+        recorder = getattr(server, "recorder", None)
+        if recorder is not None:
+            # Synchronous on purpose: an await here could be cancelled during shutdown.
+            recorder.flush(timeout=2.0)
+
+
+# The handshake methods: `initialize` is reserved by the SDK runner and cannot be overridden, so the
+# middleware records on `notifications/initialized` (handshake clients) and `server/discover` (2026-07-28+).
+_INITIALIZE_METHODS = ("notifications/initialized", "server/discover")
+
+
+def _tool_names(result: Any) -> list[str]:
+    tools = result.get("tools") if isinstance(result, dict) else getattr(result, "tools", None)
+    names = [t.get("name") if isinstance(t, dict) else getattr(t, "name", None) for t in tools or []]
+    return [str(n) for n in names if n]
 
 
 class PlatformIOServer(MCPServer):
-    """MCPServer that writes one analytics event per tool call when a recorder is attached."""
+    """MCPServer that writes one analytics event per tool call when a recorder is attached, plus one
+    `$mcp_initialize` and one `$mcp_tools_list` per process through the `observe` middleware."""
 
     recorder: analytics.Recorder | None = None
+
+    async def observe(self, ctx: Any, call_next: Any) -> Any:
+        """Server middleware: the SDK's documented hook for observing the handshake and `tools/list`."""
+        result = await call_next(ctx)
+        if self.recorder is not None and ctx.method in (*_INITIALIZE_METHODS, "tools/list"):
+            with suppress(Exception):  # analytics must never break the protocol
+                client, protocol = analytics.request_client(ctx), str(ctx.protocol_version or "") or None
+                if ctx.method == "tools/list":
+                    self.recorder.record_lifecycle("$mcp_tools_list", client=client, protocol_version=protocol, tool_names=_tool_names(result))
+                else:
+                    self.recorder.record_lifecycle("$mcp_initialize", client=client, protocol_version=protocol)
+        return result
 
     async def call_tool(self, name: str, arguments: dict[str, Any], context: Any = None) -> Any:
         if self.recorder is None:
@@ -66,6 +94,7 @@ class PlatformIOServer(MCPServer):
             self.recorder.record(
                 tool=name, ok=ok, error=error, duration_ms=int((time.monotonic() - start) * 1000),
                 arg_keys=list(arguments or {}), client=analytics.client_from_context(context),
+                protocol_version=analytics.protocol_from_context(context), ids=analytics.public_ids(arguments),
             )
 
 
@@ -74,6 +103,7 @@ def create_server(record_usage: bool = False) -> MCPServer:
     mcp = PlatformIOServer(name="platformio", version=__version__, instructions=INSTRUCTIONS + f"\nActive policy: {policy()}.", lifespan=lifespan)
     if record_usage and analytics.enabled():
         mcp.recorder = analytics.Recorder.from_env()
+        mcp.middleware.append(mcp.observe)
     register_all(mcp)
     return mcp
 

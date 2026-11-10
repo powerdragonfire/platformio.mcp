@@ -6,6 +6,16 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-10
+
+### Added
+- PostHog events carry `$session_id` (the per-process session), `$mcp_source`, `$lib_version`, and `$mcp_protocol_version`, so PostHog's MCP analytics Sessions tab and per-tool session counts work.
+- `$mcp_initialize` and `$mcp_tools_list` (with `$mcp_listed_tool_names`) go to PostHog once per process each. Tools listed and never called become visible.
+- Tool-call events keep the `board` and `platform` argument values when they are PlatformIO registry ids such as `esp32dev` or `espressif32`. Paths and URLs in those arguments are dropped. All other argument values stay out.
+
+### Changed
+- PostHog events go out through `/batch/` in batches of up to 20 events or every 5 seconds, in place of one POST per event. Server shutdown flushes the open batch for up to 2 seconds. The local log and `PLATFORMIO_MCP_ANALYTICS_URL` are unchanged.
+
 ## [0.4.1] - 2026-11-09
 
 ### Changed

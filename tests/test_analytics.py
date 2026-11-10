@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from platformio_mcp import analytics, cli
+from platformio_mcp import __version__, analytics, cli
 from platformio_mcp.server import create_server
 
 
@@ -175,13 +175,19 @@ def posthog(usage_dir, monkeypatch):
 def test_posthog_receives_anonymous_event(posthog, usage_dir):
     rec = analytics.Recorder.from_env()
     rec.record(tool="pio_build", ok=False, error="policy_denied", duration_ms=7, arg_keys=["env"], client={"name": "claude-code", "version": "2.1"})
+    rec.flush(timeout=2.0)
     posthog.wait()
 
     [body] = posthog.received
-    assert posthog.paths == ["/i/v0/e/"]
-    assert body["api_key"] == "phc_test" and body["event"] == "$mcp_tool_call"
-    assert body["distinct_id"] == (usage_dir / "install_id").read_text().strip()
-    props = body["properties"]
+    assert posthog.paths == ["/batch/"]
+    assert body["api_key"] == "phc_test"
+    [event] = body["batch"]
+    assert event["event"] == "$mcp_tool_call"
+    assert event["distinct_id"] == (usage_dir / "install_id").read_text().strip()
+    props = event["properties"]
+    assert props["$session_id"] == rec.session
+    assert props["$mcp_source"] == "posthog_mcp_analytics"
+    assert props["$lib_version"] == __version__
     assert props["$process_person_profile"] is False
     assert props["$mcp_tool_name"] == "pio_build"
     assert props["$mcp_is_error"] is True and props["$mcp_error_type"] == "policy_denied"
@@ -212,3 +218,90 @@ def test_posthog_opt_outs_keep_local_log(posthog, usage_dir, monkeypatch, env):
     assert read_events(usage_dir)[0]["tool"] == "pio_build"
     assert not (usage_dir / "install_id").exists()
     posthog.server.server_close()
+
+
+def test_posthog_batch_sends_at_twenty_events(posthog):
+    rec = analytics.Recorder.from_env()
+    for _ in range(20):
+        rec.record(tool="pio_build", ok=True, error=None, duration_ms=1, arg_keys=[], client=None)
+    posthog.wait()
+    [body] = posthog.received
+    assert len(body["batch"]) == 20
+
+
+def test_posthog_batch_sends_after_interval(posthog, monkeypatch):
+    monkeypatch.setattr(analytics, "BATCH_INTERVAL_S", 0.2)
+    rec = analytics.Recorder.from_env()
+    rec.record(tool="pio_build", ok=True, error=None, duration_ms=1, arg_keys=[], client=None)
+    rec.record(tool="pio_upload", ok=True, error=None, duration_ms=1, arg_keys=[], client=None)
+    posthog.wait()
+    [body] = posthog.received
+    assert [e["properties"]["$mcp_tool_name"] for e in body["batch"]] == ["pio_build", "pio_upload"]
+
+
+def test_raw_url_sink_gets_one_post_per_event(usage_dir, monkeypatch):
+    collector = Collector(expected=2)
+    monkeypatch.setenv("PLATFORMIO_MCP_ANALYTICS_URL", collector.url + "/events")
+    rec = analytics.Recorder.from_env()
+    rec.record(tool="pio_build", ok=True, error=None, duration_ms=1, arg_keys=[], client=None)
+    rec.record(tool="pio_upload", ok=True, error=None, duration_ms=1, arg_keys=[], client=None)
+    collector.wait()
+    assert collector.paths == ["/events", "/events"]
+    assert [b["tool"] for b in collector.received] == ["pio_build", "pio_upload"]
+
+
+async def _session(mode, calls):
+    from mcp import Client
+    from mcp.types import Implementation
+
+    mcp = create_server(record_usage=True)
+    async with Client(mcp, client_info=Implementation(name="verification-test", version="9.9"), mode=mode) as client:
+        await client.list_tools()
+        await client.list_tools()
+        for name, args in calls:
+            await client.call_tool(name, args)
+    return mcp
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode,protocol", [("legacy", "2025-11-25"), ("auto", "2026-07-28")])
+async def test_session_sends_initialize_and_tools_list_once_and_flushes_on_shutdown(posthog, monkeypatch, mode, protocol):
+    monkeypatch.setenv("PLATFORMIO_MCP_POLICY", "read_only")
+    monkeypatch.setattr(analytics, "BATCH_INTERVAL_S", 60.0)
+    mcp = await _session(mode, [("pio_monitor_list", {}), ("pio_monitor_list", {})])
+    posthog.wait()  # only the lifespan shutdown flush can send before the 60 s interval
+
+    [body] = posthog.received
+    events = body["batch"]
+    assert [e["event"] for e in events] == ["$mcp_initialize", "$mcp_tools_list", "$mcp_tool_call", "$mcp_tool_call"]
+    for e in events:
+        props = e["properties"]
+        assert props["$session_id"] == mcp.recorder.session
+        assert props["$mcp_protocol_version"] == protocol
+        assert props["$mcp_client_name"] == "verification-test" and props["$mcp_client_version"] == "9.9"
+        assert props["$mcp_source"] == "posthog_mcp_analytics"
+    listed = events[1]["properties"]["$mcp_listed_tool_names"]
+    assert "pio_build" in listed and "pio_monitor_list" in listed and len(listed) == len(set(listed))
+
+
+@pytest.mark.asyncio
+async def test_board_and_platform_ids_are_sent_and_other_values_are_not(posthog, monkeypatch, tmp_path):
+    monkeypatch.setenv("PLATFORMIO_MCP_POLICY", "read_only")
+    monkeypatch.setattr(analytics, "BATCH_INTERVAL_S", 60.0)
+    secret = str(tmp_path / "my-secret-project")
+    await _session("legacy", [
+        ("pio_project_init", {"project_dir": secret, "board": "esp32dev", "framework": "arduino"}),
+        ("pio_list_boards", {"query": "secret-query", "platform": "espressif32"}),
+        ("pio_project_init", {"project_dir": secret, "board": secret + "/boards/custom.json"}),
+        ("pio_list_boards", {"query": "x", "platform": "https://github.com/me/platform-private.git"}),
+        ("pio_project_init", {"project_dir": secret, "board": "192.168.1.20"}),
+    ])
+    posthog.wait()
+
+    calls = [e["properties"] for e in posthog.received[0]["batch"] if e["event"] == "$mcp_tool_call"]
+    assert calls[0]["board"] == "esp32dev" and "platform" not in calls[0]
+    assert calls[1]["platform"] == "espressif32" and "board" not in calls[1]
+    assert "board" not in calls[2] and "platform" not in calls[3] and "board" not in calls[4]
+    raw = json.dumps(posthog.received)
+    for value in ("my-secret-project", "secret-query", "arduino", "platform-private", "192.168.1.20", str(tmp_path)):
+        assert value not in raw
