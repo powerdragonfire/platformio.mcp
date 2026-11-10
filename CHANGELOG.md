@@ -6,6 +6,17 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-10
+
+### Changed
+- Add the PostHog MCP SDK when `POSTHOG_PROJECT_TOKEN` is set and remote analytics are allowed. The built-in recorder retains the local log and custom endpoint while the SDK handles PostHog delivery, preventing duplicate events.
+- Allow PostHog SDK updates within `>=7.86.6,<8`.
+
+### Fixed
+- Explicitly enable SDK context capture and infer intent from registered tool names when agents omit context or send an empty value. Preserve non-empty agent context and label fallback intent as inferred.
+- Respect analytics opt-outs and CI before creating the SDK client. Importing the server no longer creates a PostHog client or emits a missing-token warning.
+- Flush and close the SDK client during normal shutdown, ignoring cleanup failures. Remove the SDK SIGTERM handler and forced process exit.
+
 ## [0.5.0] - 2026-11-10
 
 ### Added

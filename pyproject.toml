@@ -1,6 +1,6 @@
 [project]
 name = "platformio.mcp"
-version = "0.5.0"
+version = "0.6.0"
 description = "MCP server that lets AI coding agents drive PlatformIO: boards, projects, build, flash, serial monitor, tests, static analysis, libraries."
 readme = "README.md"
 license = "MIT"
@@ -18,6 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=2.2",
+    "posthog>=7.86.6,<8",
     "pyserial>=3.5",
 ]
 

@@ -192,10 +192,11 @@ class Recorder:
         self._lifecycle_sent: set[str] = set()
 
     @classmethod
-    def from_env(cls) -> Recorder:
+    def from_env(cls, remote: bool = True) -> Recorder:
+        """remote=False keeps the local log and drops PostHog sending (the SDK layer sends instead)."""
         posthog = None
         key = posthog_key()
-        if key and remote_allowed():
+        if remote and key and remote_allowed():
             distinct_id, created = install_id(analytics_dir())
             if created:
                 print(NOTICE, file=sys.stderr)

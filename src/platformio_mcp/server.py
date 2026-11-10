@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from posthog import Posthog
+from posthog.mcp import instrument
+from posthog.mcp.types import MCPAnalyticsOptions
 
 from . import __version__, analytics
 from .core import monitors, policy
@@ -47,6 +51,14 @@ async def lifespan(server: MCPServer) -> AsyncIterator[None]:
         if recorder is not None:
             # Synchronous on purpose: an await here could be cancelled during shutdown.
             recorder.flush(timeout=2.0)
+        posthog_analytics = getattr(server, "posthog_analytics", None)
+        if posthog_analytics is not None:
+            with suppress(Exception):
+                await posthog_analytics.flush()
+        posthog_client = getattr(server, "posthog_client", None)
+        if posthog_client is not None:
+            with suppress(Exception):
+                posthog_client.shutdown()
 
 
 # The handshake methods: `initialize` is reserved by the SDK runner and cannot be overridden, so the
@@ -65,6 +77,8 @@ class PlatformIOServer(MCPServer):
     `$mcp_initialize` and one `$mcp_tools_list` per process through the `observe` middleware."""
 
     recorder: analytics.Recorder | None = None
+    posthog_analytics: Any = None
+    posthog_client: Any = None
 
     async def observe(self, ctx: Any, call_next: Any) -> Any:
         """Server middleware: the SDK's documented hook for observing the handshake and `tools/list`."""
@@ -99,10 +113,32 @@ class PlatformIOServer(MCPServer):
 
 
 def create_server(record_usage: bool = False) -> MCPServer:
-    """record_usage=True attaches the analytics recorder unless PLATFORMIO_MCP_ANALYTICS=off."""
+    """record_usage=True attaches the analytics recorder unless PLATFORMIO_MCP_ANALYTICS=off.
+
+    The PostHog MCP SDK layer runs only when POSTHOG_PROJECT_TOKEN is set and remote sending is allowed
+    (PLATFORMIO_MCP_ANALYTICS=on, no DO_NOT_TRACK, no CI). While it runs, the recorder keeps the local
+    log and stops its own PostHog sending, so each `$mcp_*` event reaches PostHog once.
+    """
     mcp = PlatformIOServer(name="platformio", version=__version__, instructions=INSTRUCTIONS + f"\nActive policy: {policy()}.", lifespan=lifespan)
     if record_usage and analytics.enabled():
-        mcp.recorder = analytics.Recorder.from_env()
+        sdk = False
+        token = os.environ.get("POSTHOG_PROJECT_TOKEN")
+        if token and analytics.remote_allowed():
+            client = Posthog(token, host=os.environ.get("POSTHOG_HOST") or analytics.POSTHOG_HOST)
+            mcp.posthog_client = client
+
+            async def intent_fallback(request: dict[str, Any], extra: Any) -> str | None:
+                # Only registered names: never infer from paths, arguments, or transport metadata.
+                name = (request.get("params") or {}).get("name")
+                if any(tool.name == name for tool in await mcp.list_tools()):
+                    return f"Invoking {name}"
+                return None
+
+            mcp.posthog_analytics = instrument(
+                mcp, client, MCPAnalyticsOptions(context=True, intent_fallback=intent_fallback)
+            )
+            sdk = True
+        mcp.recorder = analytics.Recorder.from_env(remote=not sdk)
         mcp.middleware.append(mcp.observe)
     register_all(mcp)
     return mcp

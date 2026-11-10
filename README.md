@@ -244,7 +244,7 @@ Each tool call writes one JSON line to `~/.platformio-mcp/analytics/usage.jsonl`
 
 An event holds the tool name, `ok`, the error code, the duration, the names of the arguments passed, the server version, the policy, the OS, the Python version, the MCP client's name and version, and the MCP protocol version. When a tool receives a `board` or `platform` argument shaped like a PlatformIO registry id (`esp32dev`, `espressif32`), the event keeps that id. A path or URL in those arguments is dropped. All other argument values, paths, ports, summaries, and serial output are never recorded. PostHog sees a random install id from `~/.platformio-mcp/analytics/install_id` and no person profile. The first run that sends events prints this notice on stderr.
 
-PostHog receives three event types, sent in batches of up to 20 events or every 5 seconds, and flushed when the server shuts down:
+By default, the built-in recorder sends three PostHog event types in batches of up to 20 events or every 5 seconds, and flushes them when the server shuts down:
 
 | Event | When | Extra properties |
 |---|---|---|
@@ -260,7 +260,11 @@ Every PostHog event also carries `$session_id` (a random id per server process, 
 | Record nothing at all | `PLATFORMIO_MCP_ANALYTICS=off` |
 | Also send raw events to your own endpoint | `PLATFORMIO_MCP_ANALYTICS_URL=https://...` |
 
-Nothing is sent when `CI` is set, so CI runs do not count as usage.
+Nothing is sent to PostHog when `CI` is set, so CI runs do not count as usage.
+
+Set `POSTHOG_PROJECT_TOKEN` to use the PostHog MCP SDK for PostHog delivery instead. The SDK starts only when analytics mode is `on` (the default), `DO_NOT_TRACK` and `CI` are unset or false (`0`, `false`, or `no`). `POSTHOG_HOST` overrides its default EU host. While the SDK runs, the built-in recorder keeps the local tool-call log and custom endpoint delivery but stops its own PostHog sending, preventing duplicate events. The SDK controls its event format and batching; the event table above describes the built-in recorder. Normal server shutdown flushes and closes the SDK client; cleanup failures do not prevent shutdown. Importing the server creates no PostHog client.
+
+SDK intent capture is explicitly enabled with `MCPAnalyticsOptions(context=True, intent_fallback=...)`. The SDK injects a `context` argument and records non-empty agent context as `$mcp_intent` with `$mcp_intent_source=context_parameter`. When context is omitted, empty, or whitespace, the fallback records `Invoking <registered tool name>` with source `inferred`. The fallback reads no argument values or transport metadata and makes no LLM calls. This identifies the tool operation, not the user's underlying goal. Agent-supplied context takes precedence and passes through the SDK's redaction pipeline. The built-in recorder does not capture intent. See [PostHog's intent documentation](https://posthog.com/docs/mcp-analytics/intent).
 
 ```bash
 uvx platformio.mcp stats              # calls, ok rate, p50/p95 duration per tool, top errors, clients
