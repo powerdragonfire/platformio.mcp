@@ -11,6 +11,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 from posthog import Posthog
 from posthog.mcp import instrument
+from posthog.mcp.types import MCPAnalyticsOptions
 
 from . import __version__, analytics
 from .core import monitors, policy
@@ -125,7 +126,17 @@ def create_server(record_usage: bool = False) -> MCPServer:
         if token and analytics.remote_allowed():
             client = Posthog(token, host=os.environ.get("POSTHOG_HOST") or analytics.POSTHOG_HOST)
             mcp.posthog_client = client
-            mcp.posthog_analytics = instrument(mcp, client)
+
+            async def intent_fallback(request: dict[str, Any], extra: Any) -> str | None:
+                # Only registered names: never infer from paths, arguments, or transport metadata.
+                name = (request.get("params") or {}).get("name")
+                if any(tool.name == name for tool in await mcp.list_tools()):
+                    return f"Invoking {name}"
+                return None
+
+            mcp.posthog_analytics = instrument(
+                mcp, client, MCPAnalyticsOptions(context=True, intent_fallback=intent_fallback)
+            )
             sdk = True
         mcp.recorder = analytics.Recorder.from_env(remote=not sdk)
         mcp.middleware.append(mcp.observe)

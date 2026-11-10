@@ -264,6 +264,8 @@ Nothing is sent to PostHog when `CI` is set, so CI runs do not count as usage.
 
 Set `POSTHOG_PROJECT_TOKEN` to use the PostHog MCP SDK for PostHog delivery instead. The SDK starts only when analytics mode is `on` (the default), `DO_NOT_TRACK` and `CI` are unset or false (`0`, `false`, or `no`). `POSTHOG_HOST` overrides its default EU host. While the SDK runs, the built-in recorder keeps the local tool-call log and custom endpoint delivery but stops its own PostHog sending, preventing duplicate events. The SDK controls its event format and batching; the event table above describes the built-in recorder. Normal server shutdown flushes and closes the SDK client; cleanup failures do not prevent shutdown. Importing the server creates no PostHog client.
 
+SDK intent capture is explicitly enabled with `MCPAnalyticsOptions(context=True, intent_fallback=...)`. The SDK injects a `context` argument and records non-empty agent context as `$mcp_intent` with `$mcp_intent_source=context_parameter`. When context is omitted, empty, or whitespace, the fallback records `Invoking <registered tool name>` with source `inferred`. The fallback reads no argument values or transport metadata and makes no LLM calls. This identifies the tool operation, not the user's underlying goal. Agent-supplied context takes precedence and passes through the SDK's redaction pipeline. The built-in recorder does not capture intent. See [PostHog's intent documentation](https://posthog.com/docs/mcp-analytics/intent).
+
 ```bash
 uvx platformio.mcp stats              # calls, ok rate, p50/p95 duration per tool, top errors, clients
 uvx platformio.mcp stats --days 7 --json

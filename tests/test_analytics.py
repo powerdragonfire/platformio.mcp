@@ -400,3 +400,47 @@ def test_server_module_has_no_import_side_effects():
     source = Path(server.__file__).read_text()
     assert "os._exit" not in source
     assert not any(isinstance(v, FakePosthog) or type(v).__name__ == "Posthog" for v in vars(server).values())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("context", [None, "", "   ", "Inspecting active serial monitors"])
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+async def test_sdk_captures_intent_with_empty_context_fallback(usage_dir, monkeypatch, context, mode):
+    """Exercise real instrumentation; only replace the outbound PostHog client."""
+    from mcp import Client
+
+    from platformio_mcp import server
+
+    events = []
+
+    class CapturingPosthog(FakePosthog):
+        def capture(self, event, **payload):
+            if event == "$mcp_tool_call":
+                events.append(payload["properties"])
+
+    monkeypatch.setattr(server, "Posthog", CapturingPosthog)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("POSTHOG_PROJECT_TOKEN", "phc_test")
+    mcp = create_server(record_usage=True)
+
+    monkeypatch.setenv("PLATFORMIO_MCP_POLICY", "read_only")
+    arguments = {} if context is None else {"context": context}
+    async with Client(mcp, mode=mode) as client:
+        listing = await client.list_tools()
+        tool = next(tool for tool in listing.tools if tool.name == "pio_monitor_list")
+        assert tool.input_schema["properties"]["context"]["type"] == "string"
+        await client.call_tool("pio_monitor_list", arguments)
+        await client.call_tool("pio_build", {"project_dir": "/private/secret-project", "env": "secret-env"})
+
+    [event, build_event] = events
+    assert build_event["$mcp_intent"] == "Invoking pio_build"
+    assert build_event["$mcp_intent_source"] == "inferred"
+    assert "secret" not in build_event["$mcp_intent"]
+    if context and context.strip():
+        assert event["$mcp_intent"] == "Inspecting active serial monitors"
+        assert event["$mcp_intent_source"] == "context_parameter"
+    else:
+        assert event["$mcp_intent"] == "Invoking pio_monitor_list"
+        assert event["$mcp_intent_source"] == "inferred"
+    assert read_events(usage_dir)[0]["ok"] is True
