@@ -9,13 +9,14 @@ The `platformio` MCP server gives you hands on the board. Use its tools instead 
 
 ## Start of session
 
-1. `pio_system_info` once. If `ok` is false, relay the install hint and stop.
+1. `pio_system_info` once. If `ok` is false, relay the install hint and stop. It also lists installed `platforms` and `tools` (name, version, path), so use it to check a toolchain is present without needing a project.
 2. `pio_project_envs(project_dir)` to learn the envs, board, and monitor speed. Pass an absolute `project_dir` to every later call.
 3. New project? `pio_list_boards(query)` to find the board id, then `pio_project_init`. Never hand-write `platformio.ini` for a new project.
 
 ## Build
 
 - `pio_build(project_dir, env)`. Read `errors` first: each has `file`, `line`, `column`, `message`. Fix them in source, build again. Ignore `warnings` unless asked.
+- Several envs (for example esp32 and esp8266 variants)? One call: `pio_build(project_dir, envs=["a", "b"])`. Envs build in order and a failure does not stop the rest. Read `failed_envs` and each entry in `results` (`ok`, `errors`, `memory`); `status` is `success`, `partial`, or `failed`. Use `env` or `envs`, never both.
 - `memory.flash.percent` and `memory.ram.percent` tell you how full the part is. Above 90% flash, call `pio_size_report` before adding features.
 
 ## Flash and verify (preferred over upload + monitor)
@@ -30,6 +31,7 @@ The `platformio` MCP server gives you hands on the board. Use its tools instead 
 ## Serial sessions
 
 - `pio_monitor_start` returns a `session_id`; `pio_monitor_read(session_id, cursor, wait_for=regex)` blocks until the pattern arrives. Keep the returned `cursor` for the next read.
+- If `wait_for` never matches, the result is `ok: false` with `error: pattern_timeout` (or `session_closed` when the port dropped). `lines` still holds what arrived. Read them: a boot loop or crash means decode it or reflash with `pio_flash_and_verify`; otherwise widen the regex and read again from the same `cursor`.
 - Stop the session (`pio_monitor_stop`) before any flash. `pio_upload` refuses while a session holds the port.
 
 ## Crashes

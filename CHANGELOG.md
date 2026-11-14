@@ -6,6 +6,15 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-12
+
+### Added
+- `pio_system_info` lists globally installed platforms and tool packages (name, version, path), so an agent can inspect the toolchain without a project.
+- `pio_build` accepts `envs=[...]` to build several environments in one call. Envs build one after another, a failing env does not stop the rest, and the result reports status, errors and memory per env.
+
+### Changed
+- `pio_monitor_read` returns `ok:false` with `error: pattern_timeout` (or `session_closed`) when `wait_for` never matches, with the lines seen so far and a cursor to continue from. Reads without `wait_for` are unchanged.
+
 ## [0.6.2] - 2026-11-10
 
 ### Changed
