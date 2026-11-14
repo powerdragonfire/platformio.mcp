@@ -72,3 +72,48 @@ def test_project_init(tmp_path, monkeypatch):
     r = pio_project_init(str(tmp_path / "new"), board="uno", framework="arduino", project_options=["monitor_speed=115200"])
     assert r["ok"], r
     assert "board = uno" in r["platformio_ini"] and "monitor_speed = 115200" in r["platformio_ini"]
+
+
+RISCV_FIXTURE = Path(__file__).parent / "projects" / "riscv-crash"
+
+
+def _riscv_frames_from_elf(tc, elf):
+    """MEPC inside level3 and RA just after level2's call to level3, read from the disassembly."""
+    import re
+    import subprocess
+
+    dis = subprocess.run([tc.prefix + "objdump", "-d", "-C", str(elf)], capture_output=True, text=True, check=True).stdout
+    level3 = re.search(r"^([0-9a-f]{8}) <level3\(int volatile\*\)>:", dis, re.M)
+    body = dis[dis.index("<level2(int volatile*)>:") :]
+    lines = body.splitlines()[1:]
+    call = next(i for i, ln in enumerate(lines) if "<level3(int volatile*)>" in ln)
+    ra = re.match(r"\s*([0-9a-f]+):", lines[call + 1]).group(1)
+    return int(level3.group(1), 16), int(ra, 16)
+
+
+def test_riscv_unwind_with_real_gdb(tmp_path, monkeypatch):
+    from platformio_mcp.toolchain import find_gdb, load_toolchain, require_elf
+    from platformio_mcp.tools.analysis import pio_decode_backtrace
+
+    monkeypatch.setenv("PLATFORMIO_MCP_LOG_DIR", str(tmp_path / "logs"))
+    dst = tmp_path / "riscv-crash"
+    shutil.copytree(RISCV_FIXTURE, dst, ignore=shutil.ignore_patterns(".pio"))
+    built = pio_build(str(dst))
+    assert built["ok"], built["summary"]
+    tc = load_toolchain(str(dst), "c3")
+    if not find_gdb(tc.cc_path):
+        pytest.skip("riscv32-esp-elf-gdb not installed")
+    mepc, ra = _riscv_frames_from_elf(tc, require_elf(tc))
+    stack = "\n".join(f"{0x3FC9F000 + i * 32:08x}: " + " ".join(["0x00000000"] * 8) for i in range(4))
+    panic = (
+        "Guru Meditation Error: Core  0 panic'ed (Store access fault). Exception was unhandled.\n\n"
+        "Core  0 register dump:\n"
+        f"MEPC    : 0x{mepc:08x}  RA      : 0x{ra:08x}  SP      : 0x3fc9f000  GP      : 0x3fc8b400\n"
+        "A0      : 0x00000000  A1      : 0x0000002a\n\n"
+        f"Stack memory:\n{stack}\n"
+    )
+    r = pio_decode_backtrace(project_dir=str(dst), env="c3", text=panic)
+    assert r["method"] == "gdb_unwind", r["summary"]
+    names = [f["function"] or "" for f in r["frames"]]
+    assert names[0].startswith("level3") and names[1].startswith("level2"), r["summary"]
+    assert r["frames"][0]["file"].endswith("main.cpp")

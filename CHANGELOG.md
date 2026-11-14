@@ -6,6 +6,18 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-14
+
+### Added
+- `pio_decode_backtrace` unwinds RISC-V ESP32 panics (C2, C3, C5, C6, C61, H2, H4, P4, S31) into a full call chain. The register dump and `Stack memory:` block go to the toolchain's `riscv32-esp-elf-gdb` through Espressif's `esp-idf-panic-decoder`, now a dependency. `pio_flash_and_verify` gets the same decoding on a crash. Results carry `arch`, `method` (`gdb_unwind`, `stack_scan` or `addr2line`) and the crashed `core`. Prompted by Jason2866's [ESP-Decoder](https://github.com/Jason2866/ESP-Decoder); see `docs/adr/0001-riscv-unwinding-via-esp-idf-panic-decoder.md` for why the code comes from Espressif.
+- Without GDB, RISC-V decoding symbolizes `MEPC`, `RA` and stack words that point into code (`role: stack_scan`), and the summary gives the command that installs GDB.
+- README section on pioarduino: tested tools, the Python 3.10 to 3.14 requirement, and the ESP32-C2 hybrid-compile rebuild.
+- Multi-core RISC-V panic output is cut down to the core named in `Core N panic'ed`. A serial buffer holding several crashes decodes the last one.
+
+### Fixed
+- `pio_partition_table` finds the framework's default partition CSV on pioarduino, which splits the Arduino framework into `framework-arduinoespressif32` and `framework-arduinoespressif32-libs`.
+- `A0` in a RISC-V register dump is no longer reported as a return address. It is the first function argument on RISC-V and usually points at data.
+
 ## [0.7.0] - 2026-11-12
 
 ### Added
