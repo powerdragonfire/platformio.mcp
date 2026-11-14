@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 from typing import Any
 
 from ..core import (
@@ -17,7 +18,10 @@ from ..core import (
 from ..parsers import parse_memory
 from ..pio import DEFAULT_TIMEOUTS, resolve_project_dir, run_pio
 from ..toolchain import (
+    Address,
+    Toolchain,
     extract_crash,
+    find_gdb,
     group_by_file,
     load_toolchain,
     parse_nm,
@@ -27,6 +31,7 @@ from ..toolchain import (
     run_tool,
     symbolize,
 )
+from ..unwind import PanicBlock, arch_for_prefix, arch_for_text, code_ranges, extract_panic_block, stack_scan, unwind_with_gdb
 from .build import pio_upload
 from .devices import _pick_port
 from .project import _all_boards
@@ -59,19 +64,108 @@ def _pio_memory(path: str, env: str) -> tuple[dict, str | None]:
     return (parse_memory(res.output) if res.ok else {}), res.log_path
 
 
+GDB_INSTALL_HINT = "Install GDB with `pio pkg install -g -t platformio/tool-riscv32-esp-elf-gdb` (or start one `pio debug` session, which installs it), then decode again for a full call chain."
+
+
+def _elf_note(elf) -> str:
+    return f"ELF: {elf} (modified {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(elf.stat().st_mtime))})."
+
+
+def _chain(frames: list[dict]) -> str:
+    return " <- ".join(f"{f['function']} ({f['file'].split('/')[-1]}:{f['line']})" for f in frames[:6])
+
+
+def _decode_riscv(tc: Toolchain, elf, crash: dict, block: PanicBlock) -> dict[str, Any]:
+    """RISC-V: unwind the stack dump with GDB; without GDB, symbolize stack words that point into code."""
+    gdb = find_gdb(tc.cc_path)
+    unwind_error = None
+    frames: list[dict] = []
+    stopped = None
+    method = None
+    if gdb:
+        try:
+            r = unwind_with_gdb(gdb, str(elf), block)
+            stopped = r["stopped"]
+            for f in r["frames"]:
+                address = f["address"] or (f"0x{block.regs['MEPC']:08x}" if f["frame"] == 0 else None)
+                frames.append({"address": address, "role": "frame", "frame": f["frame"], "register": "MEPC" if f["frame"] == 0 else None, "function": f["function"], "file": f["file"], "line": f["line"], "resolved": f["resolved"], "inlined": []})
+            method = "gdb_unwind"
+        except (RuntimeError, OSError) as exc:
+            unwind_error = str(exc)
+    if method is None:
+        addrs = [Address(f"0x{block.regs['MEPC']:08x}", "pc", register="MEPC")]
+        if "RA" in block.regs:
+            addrs.append(Address(f"0x{block.regs['RA']:08x}", "lr", register="RA"))
+        known = {a.address for a in addrs}
+        scanned = [a for a in stack_scan(block, code_ranges(str(elf))) if a not in known]
+        addrs += [Address(a, "stack_scan", frame=i) for i, a in enumerate(scanned)]
+        resolved = symbolize(tc, [a.address for a in addrs])
+        for a in addrs:
+            hit = resolved.get(a.address, {})
+            frames.append({**a.to_dict(), "function": hit.get("function"), "file": hit.get("file"), "line": hit.get("line"), "resolved": hit.get("resolved", False), "inlined": hit.get("inlined", [])})
+        method = "stack_scan"
+    hit = [f for f in frames if f["resolved"]]
+    corrupted = bool(stopped and "corrupt" in stopped.lower())
+    parts = []
+    if crash["causes"]:
+        parts.append("Cause: " + crash["causes"][0].rstrip(".") + ".")
+    if len(block.cores_seen) > 1:
+        parts.append(f"Register dumps for cores {block.cores_seen}; decoded core {block.core}, the one that panicked.")
+    if method == "gdb_unwind":
+        if hit:
+            parts.append(f"GDB unwound {len(frames)} frame(s), {len(hit)} with source: {_chain(hit)}.")
+        else:
+            parts.append(f"GDB unwound {len(frames)} frame(s) but none map to source in {elf.name}; the ELF probably does not match the flashed firmware.")
+        if stopped:
+            parts.append(f"GDB stopped: {stopped}.")
+    else:
+        why = f"GDB failed ({unwind_error})" if unwind_error else f"no GDB found for {Path(tc.prefix).name}"
+        parts.append(f"RISC-V stack not unwound: {why}. Symbolized MEPC, RA and {sum(f['role'] == 'stack_scan' for f in frames)} stack word(s) that point into code; stack_scan frames can be stale return addresses from earlier calls.")
+        if hit:
+            parts.append(f"{len(hit)}/{len(frames)} resolved: {_chain(hit)}.")
+        if not gdb:
+            parts.append(GDB_INSTALL_HINT)
+    parts.append(_elf_note(elf))
+    return {
+        "ok": bool(hit),
+        "summary": " ".join(parts),
+        "causes": crash["causes"],
+        "reset_reasons": crash["reset_reasons"],
+        "backtrace_corrupted": corrupted,
+        "frames": frames,
+        "elf_path": str(elf),
+        "env": tc.env,
+        "arch": "riscv",
+        "method": method,
+        "core": block.core,
+        "gdb": gdb,
+        "unwind_error": unwind_error,
+        "addr2line": tc.addr2line,
+    }
+
+
 def _decode(project_dir: str | None, env: str | None, text: str, include_all_hex: bool) -> dict[str, Any]:
-    crash = extract_crash(text, include_all_hex=include_all_hex)
-    addrs = crash["addresses"]
-    if not addrs:
+    text_arch = arch_for_text(text)
+    crash = extract_crash(text, include_all_hex=include_all_hex, arch=text_arch)
+    block = extract_panic_block(text) if text_arch == "riscv" else None
+    if not crash["addresses"] and block is None:
         return {
             "ok": False,
             "error": "no_addresses",
-            "summary": "No crash addresses found in the text. Expected an ESP32 'Backtrace: 0x...:0x...' line, a PC/A0/EXCVADDR register dump, or a Cortex-M pc/lr dump. Pass include_all_hex=true to try every 0x-prefixed value.",
+            "summary": "No crash addresses found in the text. Expected an ESP32 'Backtrace: 0x...:0x...' line, a PC/A0/EXCVADDR register dump, a RISC-V MEPC/RA register dump with 'Stack memory:', or a Cortex-M pc/lr dump. Pass include_all_hex=true to try every 0x-prefixed value.",
             "causes": crash["causes"],
             "reset_reasons": crash["reset_reasons"],
         }
     tc = load_toolchain(project_dir, env)
     elf = require_elf(tc)
+    arch = arch_for_prefix(tc.prefix) or text_arch
+    if arch != text_arch and arch is not None:
+        crash = extract_crash(text, include_all_hex=include_all_hex, arch=arch)
+    if arch == "riscv":
+        block = block or extract_panic_block(text)
+        if block is not None:
+            return _decode_riscv(tc, elf, crash, block)
+    addrs = crash["addresses"]
     resolved = symbolize(tc, [a.address for a in addrs])
     frames = []
     for a in addrs:
@@ -80,15 +174,18 @@ def _decode(project_dir: str | None, env: str | None, text: str, include_all_hex
     hit = [f for f in frames if f["resolved"]]
     parts = []
     if crash["causes"]:
-        parts.append("Cause: " + crash["causes"][0] + ".")
+        parts.append("Cause: " + crash["causes"][0].rstrip(".") + ".")
     if hit:
-        chain = " <- ".join(f"{f['function']} ({f['file'].split('/')[-1]}:{f['line']})" for f in hit[:6])
-        parts.append(f"{len(hit)}/{len(frames)} address(es) resolved: {chain}.")
+        parts.append(f"{len(hit)}/{len(frames)} address(es) resolved: {_chain(hit)}.")
     else:
         parts.append(f"None of the {len(frames)} address(es) resolved against {elf.name}; the ELF probably does not match the flashed firmware (rebuild without changes, or flash again), or the addresses are data/stack pointers.")
     if crash["backtrace_corrupted"]:
         parts.append("The backtrace was marked CORRUPTED by the panic handler; frames after the last resolved one are unreliable.")
-    parts.append(f"ELF: {elf} (modified {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(elf.stat().st_mtime))}).")
+    if arch == "riscv":
+        parts.append("RISC-V panic output had no 'Stack memory:' dump, so only the registers were symbolized; capture the whole panic block for a full call chain.")
+    if text_arch and arch and text_arch != arch:
+        parts.append(f"The panic output looks like {text_arch} but env {tc.env} builds for {arch}; check that env matches the board that crashed.")
+    parts.append(_elf_note(elf))
     return {
         "ok": bool(hit),
         "summary": " ".join(parts),
@@ -98,6 +195,8 @@ def _decode(project_dir: str | None, env: str | None, text: str, include_all_hex
         "frames": frames,
         "elf_path": str(elf),
         "env": tc.env,
+        "arch": arch,
+        "method": "addr2line",
         "addr2line": tc.addr2line,
     }
 
@@ -269,9 +368,11 @@ def tc_env(up: dict[str, Any], env: str | None) -> str:
 def register(mcp) -> None:
     mcp.tool(name="pio_decode_backtrace", description=(
         "Turn a crash dump into source locations. Give `text` containing an ESP32/ESP-IDF 'Guru Meditation' register dump and "
-        "'Backtrace: 0x...:0x...' line, or a Cortex-M HardFault pc/lr dump, or give `session_id` of an open monitor session to scan its buffer. "
-        "Resolves every program-counter address with the toolchain's addr2line against the env's firmware.elf and returns "
-        "function, file, line (with inlined frames) per address, plus the crash cause and reset reason. The ELF must be from the same build that was flashed."
+        "'Backtrace: 0x...:0x...' line, a RISC-V ESP32 (C2/C3/C5/C6/C61/H2/H4/P4/S31) MEPC/RA register dump with its 'Stack memory:' block, "
+        "or a Cortex-M HardFault pc/lr dump, or give `session_id` of an open monitor session to scan its buffer. "
+        "Xtensa and Cortex-M addresses are resolved with the toolchain's addr2line; RISC-V stacks are unwound with the toolchain's GDB "
+        "into a full call chain (method=gdb_unwind), or, without GDB, stack words pointing into code are resolved (method=stack_scan, may include stale frames). "
+        "Returns function, file, line per frame, plus the crash cause and reset reason. The ELF must be from the same build that was flashed."
     ))(pio_decode_backtrace)
     mcp.tool(name="pio_size_report", description=(
         "Explain where flash and RAM go in the built firmware.elf: text/data/bss totals with percent of the board's flash and RAM, "

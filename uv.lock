@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -476,6 +476,19 @@ wheels = [
 ]
 
 [[package]]
+name = "esp-idf-panic-decoder"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyelftools" },
+    { name = "pyparsing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/da/f1/e4d6170a51e15afd27660992fbd2a4728cf401750ebb388b1ce035d95025/esp_idf_panic_decoder-1.5.0.tar.gz", hash = "sha256:7b093f7a1ba5fdfd77e42a960487b5a433f60dcdabf38cc98176f291fc3a88fb", size = 21841, upload-time = "2026-04-13T08:01:08.61Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/0a/0d9117c0f1cd521e4e5f1c7e1b12fd2009ad7878ae593650e87cd67a896e/esp_idf_panic_decoder-1.5.0-py3-none-any.whl", hash = "sha256:c711abafb99efdc343e19c45b6416b14a863fbe29115fafa8264cefaab85b8ea", size = 21474, upload-time = "2026-04-13T08:01:07.722Z" },
+]
+
+[[package]]
 name = "esp-pylib"
 version = "1.1.5"
 source = { registry = "https://pypi.org/simple" }
@@ -744,9 +757,10 @@ wheels = [
 
 [[package]]
 name = "platformio-mcp"
-version = "0.7.0"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
+    { name = "esp-idf-panic-decoder" },
     { name = "mcp" },
     { name = "posthog" },
     { name = "pyserial" },
@@ -772,6 +786,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "esp-coredump", marker = "extra == 'coredump'", specifier = ">=1.10" },
+    { name = "esp-idf-panic-decoder", specifier = ">=1.5,<2" },
     { name = "mcp", specifier = ">=2.2" },
     { name = "platformio", marker = "extra == 'platformio'", specifier = ">=6.1" },
     { name = "posthog", specifier = ">=7.86.6,<8" },
@@ -960,6 +975,15 @@ wheels = [
 [package.optional-dependencies]
 crypto = [
     { name = "cryptography" },
+]
+
+[[package]]
+name = "pyparsing"
+version = "3.3.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/11/b213bebff182584360cb8d17c72c1677fec5c5c228de439e63bcf8ab1c8f/pyparsing-3.3.3.tar.gz", hash = "sha256:928ae7e20211f3b6f3915a72f06a0cfd29ab9d24279dd6346b6b1a7146397d36", size = 1050487, upload-time = "2026-09-20T20:59:05.609Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/38/bb/d215ee7c73b61497b28a5503f9f53523f294fcc936762b7caf90e0c1c2b5/pyparsing-3.3.3-py3-none-any.whl", hash = "sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4", size = 126420, upload-time = "2026-09-20T20:59:04.025Z" },
 ]
 
 [[package]]
