@@ -4,10 +4,12 @@ globs: ["platformio.ini", "src/**/*.cpp", "src/**/*.c", "src/**/*.ino", "lib/**"
 alwaysApply: false
 ---
 
-- Build with `pio_build`; fix the returned `errors` (file, line, column) before anything else.
+- Build with `pio_build`; fix the returned `errors` (file, line, column) before anything else. Several envs: `pio_build(envs=[...])` builds them in order and reports each.
 - Flash with `pio_flash_and_verify(expect="<healthy boot line>")` and act on `verdict`: `fail` comes with decoded frames, `timeout` means check port/baud.
 - On any `Guru Meditation`, `Backtrace:`, or `HardFault` output, call `pio_decode_backtrace` and fix the first frame in project code.
 - Stop serial sessions (`pio_monitor_stop`) before flashing.
+- `pio_monitor_read` with `wait_for` returns `ok: false`, `error: pattern_timeout` when nothing matches; read `lines`, then reflash or widen the pattern.
+- `pio_system_info` lists installed `platforms` and `tools` without needing a project.
 - Add libraries with `pio_pkg_install`, which edits `platformio.ini` itself.
 - Above 90% flash, run `pio_size_report` before adding features.
 - Upload cannot open the port? Read `port_diagnosis` or call `pio_port_diagnose`; pass `stop_open_sessions=true` when our own session holds it.

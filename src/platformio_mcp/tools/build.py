@@ -93,14 +93,40 @@ def _explain_port_failure(result: dict[str, Any], upload_port: str | None, proje
 
 
 @guard
-def pio_build(project_dir: str | None = None, env: str | None = None, jobs: int | None = None, verbose: bool = False) -> dict[str, Any]:
+def pio_build(project_dir: str | None = None, env: str | None = None, jobs: int | None = None, verbose: bool = False, envs: list[str] | None = None) -> dict[str, Any]:
     check_policy("build")
+    if envs and env:
+        raise ValueError("pass either env (one environment) or envs (several), not both.")
     extra: list[str] = []
     if jobs:
         extra += ["-j", str(jobs)]
     if verbose:
         extra.append("-v")
-    return _run(project_dir, env, [], extra, "build", DEFAULT_TIMEOUTS["build"])
+    if not envs:
+        return _run(project_dir, env, [], extra, "build", DEFAULT_TIMEOUTS["build"])
+    return _build_many(project_dir, list(dict.fromkeys(envs)), extra)
+
+
+def _build_many(project_dir: str | None, envs: list[str], extra: list[str]) -> dict[str, Any]:
+    """Build each env one after another so they never fight over the shared build cache; a failing env does not stop the rest."""
+    results = [{"env": e, **_run(project_dir, e, [], extra, "build", DEFAULT_TIMEOUTS["build"])} for e in envs]
+    failed = [r["env"] for r in results if not r["ok"]]
+    lines = []
+    for r in results:
+        mem = r["memory"] or {}
+        usage = f", RAM {mem.get('ram', {}).get('percent', 0):.1f}%, Flash {mem.get('flash', {}).get('percent', 0):.1f}%" if mem else ""
+        first = f"; first error: {r['errors'][0]['file']}:{r['errors'][0]['line']}: {r['errors'][0]['message']}" if r["errors"] else ""
+        lines.append(f"{r['env']}: {r['status']} in {r['duration_s']}s{usage}{first}")
+    status = "success" if not failed else ("failed" if len(failed) == len(results) else "partial")
+    return {
+        "ok": not failed,
+        "status": status,
+        "summary": f"build {status}: {len(results) - len(failed)} of {len(results)} env(s) succeeded. " + " | ".join(lines),
+        "environments": envs,
+        "failed_envs": failed,
+        "results": results,
+        "duration_s": round(sum(r["duration_s"] for r in results), 2),
+    }
 
 
 @guard
@@ -154,7 +180,8 @@ def register(mcp) -> None:
     mcp.tool(name="pio_build", description=(
         "Compile the project (`pio run`). Returns a status, parsed compiler errors and warnings with file/line/column, "
         "RAM and Flash usage percentages, the last 40 lines of output, and a path to the full log. "
-        "Fix the listed errors, then build again. First builds may take minutes while toolchains download."
+        "Fix the listed errors, then build again. First builds may take minutes while toolchains download. "
+        "Pass envs=[...] to build several environments in one call, one after another; the result lists ok, status, errors and memory per env and keeps going when one env fails."
     ))(pio_build)
     mcp.tool(name="pio_upload", description=(
         "Build and flash firmware to the connected board (`pio run -t upload`). Refuses while a serial monitor "

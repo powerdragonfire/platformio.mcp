@@ -163,15 +163,21 @@ def pio_monitor_read(session_id: str, cursor: int = 0, max_lines: int = 200, wai
     s = monitors.get(session_id)
     r = s.read(cursor=cursor, max_lines=max_lines, wait_for=wait_for, timeout_s=min(timeout_s, 120))
     n = len(r["lines"])
+    unmatched = bool(wait_for) and not r["matched"]
     if wait_for:
         r["summary"] = f"pattern {'matched' if r['matched'] else 'not matched within ' + str(timeout_s) + 's'}; {n} new line(s). Next cursor {r['cursor']}."
+        if unmatched:
+            r["summary"] += " The device may be stuck or not booting; reflash with pio_flash_and_verify, or widen the pattern and read again from this cursor."
     else:
         r["summary"] = f"{n} new line(s); next cursor {r['cursor']}." + (" More available, read again." if r["more_available"] else "")
     if r["dropped_before_cursor"]:
         r["summary"] += f" {r['dropped_before_cursor']} older line(s) fell out of the buffer."
     if r["closed"]:
         r["summary"] += f" Session closed{': ' + r['error'] if r['error'] else ''}."
-    r["ok"] = True
+    r["ok"] = not unmatched
+    if unmatched:
+        r["session_error"] = r["error"]
+        r["error"] = "session_closed" if r["closed"] else "pattern_timeout"
     return r
 
 
@@ -231,7 +237,8 @@ def register(mcp) -> None:
     mcp.tool(name="pio_monitor_read", description=(
         "Read new serial lines from a session since `cursor` (start at 0) and get the next cursor back. "
         "Set wait_for to a regex to block up to timeout_s until a matching line arrives (e.g. wait_for='setup done|Guru Meditation'). "
-        "Without wait_for and with timeout_s>0 it waits for at least one new line."
+        "Without wait_for and with timeout_s>0 it waits for at least one new line. "
+        "When wait_for never matches the result is ok=false with error=pattern_timeout (or session_closed), plus the lines seen so far and a cursor to continue from."
     ))(pio_monitor_read)
     mcp.tool(name="pio_monitor_write", description="Send text to the device over the open session's serial port (newline appended by default). Blocked under build_only/read_only policy.")(pio_monitor_write)
     mcp.tool(name="pio_monitor_stop", description="Close a serial monitor session and release the port.")(pio_monitor_stop)

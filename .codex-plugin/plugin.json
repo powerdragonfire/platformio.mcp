@@ -1,6 +1,6 @@
 {
   "name": "platformio",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Build, flash, monitor, test, and debug embedded firmware through PlatformIO.",
   "author": { "name": "Mihir Gandecha" },
   "homepage": "https://github.com/powerdragonfire/platformio.mcp",
