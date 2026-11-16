@@ -18,6 +18,12 @@ All notable changes to this project are recorded here. The format follows
 - `pio_partition_table` finds the framework's default partition CSV on pioarduino, which splits the Arduino framework into `framework-arduinoespressif32` and `framework-arduinoespressif32-libs`.
 - `A0` in a RISC-V register dump is no longer reported as a return address. It is the first function argument on RISC-V and usually points at data.
 
+### Changed
+- Release workflow uses `actions/upload-artifact` v7 and `actions/download-artifact` v8.
+
+### Security
+- `opentelemetry-api` 1.45.2 in the lock file fixes quadratic-time `traceparent` parsing that allowed denial of service (Dependabot alert 5).
+
 ## [0.7.0] - 2026-11-12
 
 ### Added
