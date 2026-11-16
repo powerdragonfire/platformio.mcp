@@ -164,7 +164,8 @@ def _decode(project_dir: str | None, env: str | None, text: str, include_all_hex
     if arch == "riscv":
         block = block or extract_panic_block(text)
         if block is not None:
-            return _decode_riscv(tc, elf, crash, block)
+            # Cause and reset reason from the unwound crash only; a boot loop buffer holds older ones too.
+            return _decode_riscv(tc, elf, extract_crash(block.text, arch="riscv"), block)
     addrs = crash["addresses"]
     resolved = symbolize(tc, [a.address for a in addrs])
     frames = []

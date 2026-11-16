@@ -13,3 +13,4 @@ RISC-V Espressif chips (C2, C3, C5, C6, C61, H2, H4, P4, S31) print registers an
 - `esp-idf-panic-decoder` is a hard dependency, so a plain `uvx platformio.mcp` install can unwind.
 - Unwinding needs the GDB package (`tool-riscv32-esp-elf-gdb`). Without it the decoder falls back to symbolizing stack words that point into code, marked `stack_scan`, and tells the agent how to install GDB.
 - The package parses one register dump only, so multi-core panic output is cut down to the crashed core before it is handed over.
+- GDB runs `platformio_mcp.panic_stub`, a 40-line wrapper around the package's `GdbServer`. Version 1.5 of that server loops forever on EOF, so the stub exits when GDB closes the pipe and after a deadline.

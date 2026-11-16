@@ -1,5 +1,10 @@
 """RISC-V panic unwinding: block extraction, GDB bt parsing, stack-scan fallback, and the decode tool path."""
 
+import os
+import subprocess
+import sys
+import time
+
 import pytest
 
 from platformio_mcp import toolchain, unwind
@@ -89,6 +94,30 @@ def test_extract_panic_block_keeps_last_crash_of_a_boot_loop():
     assert b.regs["MEPC"] == 0x42000B00
 
 
+EARLIER_STACKLESS = """\
+Guru Meditation Error: Core  0 panic'ed (Illegal instruction). Exception was unhandled.
+
+Core  0 register dump:
+MEPC    : 0x40000000  RA      : 0x40000004  SP      : 0x40810000  GP      : 0x40811e14
+
+ELF file SHA256: 4faf3099c
+Rebooting...
+"""
+
+
+def test_extract_panic_block_ignores_registers_of_an_earlier_stackless_panic():
+    b = unwind.extract_panic_block(EARLIER_STACKLESS + C6_PANIC)
+    assert b.cores_seen == [0]
+    assert b.regs["MEPC"] == 0x42000A1C and b.regs["SP"] == 0x40816F60
+    assert "Illegal instruction" not in b.text and "Store access fault" in b.text
+
+
+def test_extract_panic_block_splits_dumps_without_guru_lines_at_a_repeated_core():
+    strip = lambda t: "\n".join(l for l in t.splitlines() if "Guru Meditation" not in l)
+    b = unwind.extract_panic_block(strip(EARLIER_STACKLESS) + "\n" + strip(C6_PANIC))
+    assert b.cores_seen == [0] and b.regs["MEPC"] == 0x42000A1C
+
+
 def test_extract_panic_block_stops_at_address_gap():
     text = C6_PANIC.replace("40816f80:", "40817000:")
     assert len(unwind.extract_panic_block(text).stack_words) == 8
@@ -129,8 +158,58 @@ def test_parse_gdb_bt_cpp_names():
 def test_gdb_command_runs_the_decoder_module():
     cmd = unwind.gdb_command("/g/riscv32-esp-elf-gdb", "/p/firmware.elf", "/tmp/panic.txt", python="/py/python")
     assert cmd[:4] == ["/g/riscv32-esp-elf-gdb", "--batch", "-n", "/p/firmware.elf"]
-    assert 'target remote | "/py/python" -m esp_idf_panic_decoder "/tmp/panic.txt"' in cmd
+    assert 'target remote | "/py/python" -m platformio_mcp.panic_stub "/tmp/panic.txt" --deadline 90' in cmd
     assert cmd[-1] == "bt" and "set print frame-arguments none" in cmd
+
+
+def _write_panic_file(tmp_path):
+    path = tmp_path / "panic.txt"
+    path.write_text(unwind.extract_panic_block(C6_PANIC).render())
+    return path
+
+
+def test_panic_stub_exits_when_stdin_closes(tmp_path):
+    # esp-idf-panic-decoder 1.5 spins forever on EOF; the stub must exit once GDB is gone.
+    proc = subprocess.run([sys.executable, "-m", "platformio_mcp.panic_stub", str(_write_panic_file(tmp_path))], stdin=subprocess.DEVNULL, capture_output=True, timeout=20)
+    assert proc.returncode == 0
+
+
+def test_panic_stub_exits_at_its_deadline(tmp_path):
+    proc = subprocess.Popen([sys.executable, "-m", "platformio_mcp.panic_stub", str(_write_panic_file(tmp_path)), "--deadline", "1"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    try:
+        assert proc.wait(timeout=20) == 2  # os._exit(2) from the deadline timer
+    finally:
+        proc.kill()
+        proc.stdin.close()
+        proc.stdout.close()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="fake GDB is a POSIX script")
+def test_gdb_timeout_leaves_no_decoder_running(tmp_path):
+    # A fake GDB that, like the real one, starts the `target remote |` command on a pipe, then hangs.
+    pid_file = tmp_path / "stub.pid"
+    fake_gdb = tmp_path / "fake-gdb"
+    fake_gdb.write_text(
+        f"#!{sys.executable}\n"
+        "import subprocess, sys, time\n"
+        "remote = next(a for a in sys.argv if a.startswith('target remote | '))[len('target remote | '):]\n"
+        "p = subprocess.Popen(remote, shell=True, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)\n"
+        f"open({str(pid_file)!r}, 'w').write(str(p.pid))\n"
+        "time.sleep(600)\n"
+    )
+    fake_gdb.chmod(0o755)
+    with pytest.raises(RuntimeError, match="did not finish"):
+        unwind.unwind_with_gdb(str(fake_gdb), "/p/firmware.elf", unwind.extract_panic_block(C6_PANIC), timeout=3)
+    pid = int(pid_file.read_text())
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.2)
+    os.kill(pid, 9)
+    pytest.fail("decoder stub still running after GDB was killed")
 
 
 def test_stack_scan_keeps_code_words_in_order():
@@ -186,6 +265,15 @@ def test_decode_riscv_with_gdb(monkeypatch, riscv_toolchain):
     assert r["backtrace_corrupted"] is True
     assert "GDB unwound 6 frame(s), 5 with source: level3 (main.cpp:3) <- level2" in r["summary"]
     assert "Store access fault" in r["summary"]
+
+
+def test_decode_riscv_cause_comes_from_the_unwound_panic(monkeypatch, riscv_toolchain):
+    monkeypatch.setattr(analysis, "find_gdb", lambda cc: None)
+    first = "rst:0x1 (POWERON),boot:0xc\n" + C6_PANIC.replace("Store access fault", "Illegal instruction")
+    r = analysis.pio_decode_backtrace(project_dir=str(riscv_toolchain), env="c6", text=first + "rst:0xc (SW_CPU),boot:0xc\n" + C6_PANIC)
+    assert [c for c in r["causes"] if "Illegal" in c] == []
+    assert "Store access fault" in r["causes"][0] and "Cause: Guru Meditation Error: Core  0 panic'ed (Store access fault)" in r["summary"]
+    assert r["reset_reasons"] == ["SW_CPU"]
 
 
 def test_decode_riscv_without_gdb_falls_back_to_stack_scan(monkeypatch, riscv_toolchain):

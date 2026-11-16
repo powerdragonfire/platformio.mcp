@@ -28,6 +28,7 @@ REG_PAIR_RE = re.compile(r"\b([A-Z][A-Z0-9_]*(?:/[A-Z0-9]+)?)\s*:\s*0x([0-9a-fA-
 STACK_HEADER_RE = re.compile(r"^\s*Stack memory:\s*$", re.I)
 STACK_LINE_RE = re.compile(r"^\s*(?:0x)?([0-9a-fA-F]{8}):((?:\s+0x[0-9a-fA-F]{8})+)\s*$")
 PANIC_CORE_RE = re.compile(r"Core\s+(\d+)\s+panic'ed", re.I)
+CRASH_START_RE = re.compile(r"Guru Meditation Error|abort\(\) was called", re.I)
 
 
 def arch_for_mcu(mcu: str | None) -> str | None:
@@ -69,6 +70,7 @@ class PanicBlock:
     regs: dict[str, int]
     stack_base: int
     stack_words: list[int] = field(default_factory=list)
+    text: str = ""  # serial lines of this crash only, for its cause and reset reason
 
     def render(self) -> str:
         """The block in the exact shape esp-idf-panic-decoder parses: one register dump, lowercase hex stack lines."""
@@ -87,6 +89,8 @@ def extract_panic_block(text: str) -> PanicBlock | None:
     Serial buffers often hold several crashes (boot loops) and multi-core chips print one register dump
     per core. The decoder package accepts exactly one dump, so this keeps the last crash and, within it,
     the core named in "Core N panic'ed" (or the first dump when no Guru Meditation line was printed).
+    `text` on the result holds that crash's lines, from after the previous crash's registers up to the
+    next crash, so its cause and the reset it caused can be read without mixing in other crashes.
     """
     lines = text.splitlines()
     stack_idx = next((i for i in range(len(lines) - 1, -1, -1) if STACK_HEADER_RE.match(lines[i])), None)
@@ -110,34 +114,49 @@ def extract_panic_block(text: str) -> PanicBlock | None:
         expected = addr + 4 * len(row)
     if base is None:
         return None
+    stack_end = stack_idx + 1
+    while stack_end < len(lines) and (STACK_LINE_RE.match(lines[stack_end]) or not lines[stack_end].strip()):
+        stack_end += 1
     prev_stack = next((i for i in range(stack_idx - 1, -1, -1) if STACK_HEADER_RE.match(lines[i])), -1)
-    region = lines[prev_stack + 1 : stack_idx]
-    dumps: list[tuple[int, dict[str, int]]] = []
+    dumps: list[tuple[int, int, dict[str, int]]] = []  # (line index, core, registers)
     current: dict[str, int] | None = None
-    for line in region:
-        h = REG_HEADER_RE.search(line)
+    for i in range(prev_stack + 1, stack_idx):
+        h = REG_HEADER_RE.search(lines[i])
         if h:
             current = {}
-            dumps.append((int(h.group(1)), current))
+            dumps.append((i, int(h.group(1)), current))
             continue
         if current is None:
             continue
-        pairs = REG_PAIR_RE.findall(line)
+        pairs = REG_PAIR_RE.findall(lines[i])
         if pairs:
             for name, value in pairs:
                 current[name.upper()] = int(value, 16)
         elif current:
             current = None  # first non-register line after the dump ends it
-    dumps = [(core, regs) for core, regs in dumps if "MEPC" in regs]
-    if not dumps:
+    dumps = all_dumps = [d for d in dumps if "MEPC" in d[2]]
+    # The stack belongs to the last crash. Its register dumps follow its last crash line ("Guru Meditation",
+    # "abort() was called"), and one crash prints each core once, so a repeated core starts an older crash.
+    last_start = next((i for i in range(stack_idx - 1, prev_stack, -1) if CRASH_START_RE.search(lines[i])), None)
+    if last_start is not None and any(d[0] > last_start for d in dumps):
+        dumps = [d for d in dumps if d[0] > last_start]
+    crash: list[tuple[int, int, dict[str, int]]] = []
+    for d in reversed(dumps):
+        if any(c[1] == d[1] for c in crash):
+            break
+        crash.insert(0, d)
+    if not crash:
         return None
+    older = [d for d in all_dumps if d[0] < crash[0][0]]
+    start = older[-1][0] + 1 if older else prev_stack + 1
+    end = next((i for i in range(stack_end, len(lines)) if CRASH_START_RE.search(lines[i]) or REG_HEADER_RE.search(lines[i])), len(lines))
     panic_core = None
-    for line in region:
+    for line in lines[start:stack_idx]:
         m = PANIC_CORE_RE.search(line)
         if m:
             panic_core = int(m.group(1))
-    chosen = next((d for d in dumps if d[0] == panic_core), dumps[0])
-    return PanicBlock(core=chosen[0], cores_seen=[c for c, _ in dumps], regs=chosen[1], stack_base=base, stack_words=words)
+    chosen = next((d for d in crash if d[1] == panic_core), crash[0])
+    return PanicBlock(core=chosen[1], cores_seen=[d[1] for d in crash], regs=chosen[2], stack_base=base, stack_words=words, text="\n".join(lines[start:end]))
 
 
 # --- GDB -----------------------------------------------------------------------------------
@@ -175,7 +194,8 @@ def parse_gdb_bt(output: str) -> tuple[list[dict], str | None]:
     return frames, stopped
 
 
-def gdb_command(gdb: str, elf: str, panic_file: str, python: str | None = None) -> list[str]:
+def gdb_command(gdb: str, elf: str, panic_file: str, python: str | None = None, deadline: float = 90) -> list[str]:
+    """GDB batch command that serves the panic block through `platformio_mcp.panic_stub` and prints `bt`."""
     python = python or sys.executable
     if os.name == "nt":  # GDB parses the remote command line itself and eats single backslashes
         python = python.replace("\\", "\\\\")
@@ -190,19 +210,23 @@ def gdb_command(gdb: str, elf: str, panic_file: str, python: str | None = None) 
         "-ex",
         "set print frame-arguments none",
         "-ex",
-        f'target remote | "{python}" -m esp_idf_panic_decoder "{panic_file}"',
+        f'target remote | "{python}" -m platformio_mcp.panic_stub "{panic_file}" --deadline {deadline:.0f}',
         "-ex",
         "bt",
     ]
 
 
 def unwind_with_gdb(gdb: str, elf: str, block: PanicBlock, timeout: float = 60) -> dict:
-    """Run GDB against the panic block. Returns {frames, stopped, output} or raises RuntimeError."""
+    """Run GDB against the panic block. Returns {frames, stopped, output} or raises RuntimeError.
+
+    On timeout `subprocess.run` kills GDB only. The stub GDB started reads EOF on its closed pipe and exits,
+    and its own deadline (timeout + 30 s) ends it if the pipe somehow stays open.
+    """
     fd, panic_file = tempfile.mkstemp(prefix="pio-mcp-panic-", suffix=".txt")
     try:
         with os.fdopen(fd, "w") as f:
             f.write(block.render())
-        cmd = gdb_command(gdb, elf, panic_file)
+        cmd = gdb_command(gdb, elf, panic_file, deadline=timeout + 30)
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout)
         except subprocess.TimeoutExpired as exc:
