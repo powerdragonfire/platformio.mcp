@@ -259,12 +259,13 @@ MCP clients also prompt before each tool call. Policies are the second layer, no
 | `DO_NOT_TRACK` | `1` stops anonymous usage events to PostHog; the local log stays | unset |
 | `PLATFORMIO_MCP_ANALYTICS_DIR` | Where the usage log goes | `~/.platformio-mcp/analytics` |
 | `PLATFORMIO_MCP_ANALYTICS_URL` | Also POST each usage event as JSON to this URL | unset |
+| `PLATFORMIO_MCP_ANALYTICS_INTENT` | `1` also sends agent-written intent text and `get_more_tools` reports to PostHog | unset |
 
 ## 📊 Usage analytics
 
-Each tool call writes one JSON line to `~/.platformio-mcp/analytics/usage.jsonl` on your machine. Releases also send the same event to PostHog EU Cloud (`eu.i.posthog.com`) as an anonymous event, so the maintainers can see which tools get used and which fail.
+Each tool call writes one JSON line to `~/.platformio-mcp/analytics/usage.jsonl` on your machine. Releases also send an event to PostHog EU Cloud (`eu.i.posthog.com`) as an anonymous event, so the maintainers can see which tools get used and which fail.
 
-An event holds the tool name, `ok`, the error code, the duration, the names of the arguments passed, the server version, the policy, the OS, the Python version, the MCP client's name and version, and the MCP protocol version. When a tool receives a `board` or `platform` argument shaped like a PlatformIO registry id (`esp32dev`, `espressif32`), the event keeps that id. A path or URL in those arguments is dropped. The built-in recorder excludes other argument values, paths, ports, summaries, and serial output. The default PostHog SDK separately captures agent-supplied intent context and missing-capability reports, which can contain user content. PostHog sees a random install id from `~/.platformio-mcp/analytics/install_id` and no person profile. The first run that sends events prints this notice on stderr.
+An event holds the tool name, `ok`, the error code, the duration, the names of the arguments passed, the server version, the policy, the OS, the Python version, the MCP client's name and version, and the MCP protocol version. When a tool receives a `board` or `platform` argument shaped like a PlatformIO registry id (`esp32dev`, `espressif32`), the event keeps that id. A path or URL in those arguments is dropped. Other argument values, tool results, error text, paths, ports, summaries, and serial output are excluded on both paths. Agent-written intent text and missing-capability reports are sent only after you opt in (see below). PostHog sees a random install id from `~/.platformio-mcp/analytics/install_id` and no person profile. The first run that sends events prints this notice on stderr.
 
 By default, the built-in recorder sends three PostHog event types in batches of up to 20 events or every 5 seconds, and flushes them when the server shuts down:
 
@@ -281,6 +282,7 @@ Every PostHog event also carries `$session_id` (a random id per server process, 
 | Keep the local log, send nothing | `DO_NOT_TRACK=1` or `PLATFORMIO_MCP_ANALYTICS=local` |
 | Record nothing at all | `PLATFORMIO_MCP_ANALYTICS=off` |
 | Also send raw events to your own endpoint | `PLATFORMIO_MCP_ANALYTICS_URL=https://...` |
+| Also send agent intent text and `get_more_tools` reports | `PLATFORMIO_MCP_ANALYTICS_INTENT=1` |
 
 Nothing is sent to PostHog when `CI` is set, so CI runs do not count as usage.
 
@@ -314,15 +316,24 @@ Original prompt capture is **off by default**. A user must set `PLATFORMIO_MCP_C
 
 The server retains at most the first 2,000 characters of this prompt, including in local logs and custom endpoint events. Enabled remote delivery sends it to PostHog. Prompt text is user content and may contain secrets; no complete secret removal is promised. Only explicitly allowlisted metadata is captured, with no scraping of client chat files. Disabling this option stops future original prompt capture; it does not delete previously collected events. Existing `off`, `local`, `DO_NOT_TRACK`, and `CI` delivery controls still apply.
 
-Ordinary Claude/Codex plugin installation does not automatically supply original prompts through this custom metadata contract. A host integration must provide it. SDK agent `context` remains separate intent text, not a copy of the original conversation. These prompt settings control only the new `user_prompt` field, not the existing SDK context capture described below.
+Ordinary Claude/Codex plugin installation does not automatically supply original prompts through this custom metadata contract. A host integration must provide it. SDK agent `context` remains separate intent text, not a copy of the original conversation. These prompt settings control only the `user_prompt` field. SDK context capture has its own switch, described below.
 
-When the SDK is active, `report_missing=True` exposes a `get_more_tools` tool. Server instructions ask agents to describe their goal in tool context and call `get_more_tools` when available tools cannot fulfill a request. Agents can use it to report unsupported capabilities; the SDK sends `$mcp_missing_capability` events containing the supplied context to PostHog.
+The PostHog MCP SDK is enabled by default using the bundled public ingestion key. Set `POSTHOG_PROJECT_TOKEN` to override the ingestion key for a different project; otherwise `PLATFORMIO_MCP_POSTHOG_KEY` overrides the bundled key. With no non-empty key, the SDK is disabled. The SDK starts only when analytics mode is `on` (the default), `DO_NOT_TRACK` and `CI` are unset or false (`0`, `false`, or `no`). `POSTHOG_HOST`, then `PLATFORMIO_MCP_POSTHOG_HOST`, overrides its default EU host. While the SDK runs, the built-in recorder keeps the local tool-call log and custom endpoint delivery but stops its own PostHog sending, preventing duplicate events. Normal server shutdown flushes and closes the SDK client; cleanup failures do not prevent shutdown. Importing the server creates no PostHog client.
 
-The PostHog MCP SDK is enabled by default using the bundled public ingestion key, so ordinary installations advertise intent context and missing-capability reporting without extra configuration. Set `POSTHOG_PROJECT_TOKEN` to override the ingestion key for a different project; otherwise `PLATFORMIO_MCP_POSTHOG_KEY` overrides the bundled key. With no non-empty key, the SDK is disabled. The SDK starts only when analytics mode is `on` (the default), `DO_NOT_TRACK` and `CI` are unset or false (`0`, `false`, or `no`). `POSTHOG_HOST`, then `PLATFORMIO_MCP_POSTHOG_HOST`, overrides its default EU host. While the SDK runs, the built-in recorder keeps the local tool-call log and custom endpoint delivery but stops its own PostHog sending, preventing duplicate events. The SDK controls its event format and batching; the event table above describes the built-in recorder. Normal server shutdown flushes and closes the SDK client; cleanup failures do not prevent shutdown. Importing the server creates no PostHog client.
+The SDK builds its own `$mcp_tool_call` event, and the server filters it before sending (`before_send=analytics.strip_sdk_payloads`):
 
-Context and missing-capability reports are agent-supplied text, separate from optional original prompt capture, and are sent remotely when analytics is enabled. Agents are instructed to omit secrets and private source code. Missing-capability capture depends on agents calling the reporting tool; the server cannot observe goals or gaps that clients never send. Restart the server and refresh cached client tool lists after upgrading to expose the instrumented schemas.
+| SDK field | Default | With `PLATFORMIO_MCP_ANALYTICS_INTENT=1` |
+|---|---|---|
+| `$mcp_parameters` (argument values) | removed | removed |
+| `$mcp_response` (tool result: summary, paths, errors, backtraces) | removed | removed |
+| `$mcp_error_message` | removed | removed |
+| `$exception` events | not captured | not captured |
+| `$mcp_intent` | `Invoking <tool name>`, source `inferred` | agent-written `context` text, source `context_parameter` |
+| `context` argument on every tool, `get_more_tools` tool, `$mcp_missing_capability` events | absent | present |
 
-SDK intent capture is explicitly enabled with `MCPAnalyticsOptions(context=True, intent_fallback=...)`. The SDK injects a `context` argument and records non-empty agent context as `$mcp_intent` with `$mcp_intent_source=context_parameter`. When context is omitted, empty, or whitespace, the fallback records `Invoking <registered tool name>` with source `inferred`. The fallback reads no argument values or transport metadata and makes no LLM calls. This identifies the tool operation, not the user's underlying goal. Agent-supplied context takes precedence and passes through the SDK's redaction pipeline. The built-in recorder does not capture intent. See [PostHog's intent documentation](https://posthog.com/docs/mcp-analytics/intent).
+The remaining SDK properties are the tool name, `$mcp_is_error`, `$mcp_error_type`, `$mcp_duration_ms`, `$mcp_input_keys` (declared argument names), client, server and protocol versions, `$session_id`, `$mcp_conversation_id` (random), and the model and effort fields below.
+
+With intent capture on, the SDK injects a required `context` argument and records the agent's sentence as `$mcp_intent`. `get_more_tools` lets agents report a missing capability; the SDK sends the supplied context as `$mcp_missing_capability`. Both are agent-written free text. Agents are instructed to omit secrets and private source code, and the SDK redacts credential-like keys, URLs and base64 blocks, but file paths and project names in that text are not redacted. The intent fallback reads no argument values or transport metadata and makes no LLM calls. Restart the server and refresh cached client tool lists after changing the setting. See [PostHog's intent documentation](https://posthog.com/docs/mcp-analytics/intent).
 
 ```bash
 uvx platformio.mcp stats              # calls, ok rate, p50/p95 duration per tool, top errors, clients

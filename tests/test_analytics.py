@@ -430,6 +430,7 @@ async def test_sdk_captures_intent_with_empty_context_fallback(usage_dir, monkey
     monkeypatch.delenv("DO_NOT_TRACK", raising=False)
     monkeypatch.delenv("CI", raising=False)
     monkeypatch.setenv("POSTHOG_PROJECT_TOKEN", "phc_test")
+    monkeypatch.setenv("PLATFORMIO_MCP_ANALYTICS_INTENT", "1")
     mcp = create_server(record_usage=True)
 
     monkeypatch.setenv("PLATFORMIO_MCP_POLICY", "read_only")
@@ -499,7 +500,7 @@ async def test_client_metadata_reaches_both_analytics_paths(usage_dir, monkeypat
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["legacy", "auto"])
-async def test_default_install_advertises_and_records_intent_and_missing_capabilities(usage_dir, monkeypatch, mode):
+async def test_intent_opt_in_advertises_and_records_intent_and_missing_capabilities(usage_dir, monkeypatch, mode):
     """Exercise published client schemas and SDK events without an explicit SDK token."""
     from mcp import Client
     from platformio_mcp import server
@@ -515,6 +516,7 @@ async def test_default_install_advertises_and_records_intent_and_missing_capabil
     monkeypatch.setenv("PLATFORMIO_MCP_POSTHOG_KEY", "phc_release")
     monkeypatch.delenv("DO_NOT_TRACK", raising=False)
     monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("PLATFORMIO_MCP_ANALYTICS_INTENT", "1")
     mcp = create_server(record_usage=True)
     async with Client(mcp, mode=mode) as client:
         listing = await client.list_tools()
@@ -540,3 +542,51 @@ def test_sdk_preserves_host_override(sdk, monkeypatch, host):
         monkeypatch.setenv("POSTHOG_HOST", host)
     create_server(record_usage=True)
     assert sdk[0].host == (host or "https://legacy.posthog.example")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+async def test_default_sdk_events_carry_no_argument_values_results_or_free_text(usage_dir, monkeypatch, tmp_path, mode):
+    """Issue #34: the default SDK path sends what the README lists, without values, output or intent text."""
+    from mcp import Client
+    from platformio_mcp import server
+
+    events = []
+
+    class CapturingPosthog(FakePosthog):
+        def capture(self, event, **payload):
+            events.append((event, payload["properties"]))
+
+    monkeypatch.setattr(server, "Posthog", CapturingPosthog)
+    monkeypatch.delenv("POSTHOG_PROJECT_TOKEN", raising=False)
+    monkeypatch.setenv("PLATFORMIO_MCP_POSTHOG_KEY", "phc_release")
+    for name in ("DO_NOT_TRACK", "CI", "PLATFORMIO_MCP_ANALYTICS_INTENT"):
+        monkeypatch.delenv(name, raising=False)
+    secret = tmp_path / "acme-nda-secret-project"
+    mcp = create_server(record_usage=True)
+    async with Client(mcp, mode=mode) as client:
+        listing = await client.list_tools()
+        monitor = next(t for t in listing.tools if t.name == "pio_monitor_list")
+        assert "context" not in monitor.input_schema.get("properties", {})
+        assert not any(t.name == "get_more_tools" for t in listing.tools)
+        await client.call_tool("pio_monitor_list", {})
+        await client.call_tool("pio_build", {"project_dir": str(secret), "environment": "secret-env"})
+    calls = [p for name, p in events if name == "$mcp_tool_call"]
+    assert [c["$mcp_tool_name"] for c in calls] == ["pio_monitor_list", "pio_build"]
+    assert calls[1]["$mcp_intent"] == "Invoking pio_build"
+    for _, properties in events:
+        assert not analytics.SDK_DROPPED_PROPERTIES & properties.keys()
+    assert "secret" not in json.dumps([p for _, p in events], default=str)
+    assert not any(name in ("$exception", "$mcp_missing_capability") for name, _ in events)
+
+
+def test_strip_sdk_payloads_drops_values_and_exceptions():
+    capture = {"event": "$mcp_tool_call", "distinct_id": "x", "properties": {
+        "$mcp_tool_name": "pio_build", "$mcp_parameters": {"project_dir": "/p"},
+        "$mcp_response": {"summary": "s"}, "$mcp_error_message": "/p: missing",
+    }}
+    assert analytics.strip_sdk_payloads(capture) == {
+        "event": "$mcp_tool_call", "distinct_id": "x", "properties": {"$mcp_tool_name": "pio_build"},
+    }
+    assert "$mcp_parameters" in capture["properties"]  # input left untouched
+    assert analytics.strip_sdk_payloads({"event": "$exception", "properties": {}}) is None
