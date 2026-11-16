@@ -26,7 +26,7 @@ Typical loop: pio_system_info (also lists installed platforms and tools) -> pio_
 -> edit code -> pio_build (fix the returned errors; envs=[...] builds several envs in one call) -> pio_list_devices -> pio_flash_and_verify(expect="<healthy line>")
 which flashes, watches the boot log, and returns pass/fail with any crash decoded to file:line. For finer control use
 pio_upload then pio_monitor_capture or pio_monitor_start/pio_monitor_read with wait_for (an unmatched pattern returns ok=false, error=pattern_timeout). When the device prints a
-Guru Meditation / HardFault dump, call pio_decode_backtrace. When flash or RAM is tight, call pio_size_report to see
+Guru Meditation / HardFault dump, call pio_decode_backtrace (on RISC-V ESP32 chips include the whole 'Stack memory:' block; it is unwound with GDB). When flash or RAM is tight, call pio_size_report to see
 the biggest symbols and files. Use pio_test for Unity tests and pio_check for static analysis. Every tool returns ok, a one-paragraph summary, structured fields, and a
 log_path with the full command output when it was long. Stop monitor sessions before flashing (or pass stop_open_sessions=true).
 When an upload cannot open the port, the result carries port_diagnosis; pio_port_diagnose gives the same answer on demand.

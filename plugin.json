@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "platformio",
   "description": "Build, flash, monitor, test, and debug embedded firmware through PlatformIO: 44 MCP tools plus a skill that teaches the build-flash-verify loop.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "author": {
     "name": "Mihir Gandecha"
   },

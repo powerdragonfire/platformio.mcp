@@ -186,7 +186,7 @@ Every tool returns `ok`, a one-paragraph `summary` written for the model, struct
 |---|---|---|
 | 🚀 **`pio_flash_and_verify`** | Flash, open the port, read until `expect` matches (**pass**), a crash signature matches (**fail**, auto-decoded), or the timeout passes (**timeout**) | `pio run -t upload` + pyserial; `fail_on` defaults to Guru Meditation, HardFault, `abort()`, `assert failed`, watchdog, brownout, heap corruption |
 | 🔁 **`pio_test_plan_*`** | Run a declarative hardware test plan for N iterations with cancellation, per-iteration verdicts (`pass`/`fail`/`timeout`/`infra_error`), and evidence logs | Reuses upload + serial monitor tools, continues observing for a post-success window, and writes machine-readable reports with source+firmware identity |
-| 🩺 **`pio_decode_backtrace`** | Turn an ESP32 `Backtrace: 0x400d...` dump or a Cortex-M `pc`/`lr` dump into function, file, line, inlined frames, cause, reset reason | Toolchain located from `pio project metadata`, then `<target>-addr2line -pfiaC` on `firmware.elf`; fixes Xtensa `A0` window bits |
+| 🩺 **`pio_decode_backtrace`** | Turn an ESP32 `Backtrace: 0x400d...` dump, a RISC-V ESP32 (C2/C3/C5/C6/C61/H2/H4/P4/S31) register + `Stack memory:` dump, or a Cortex-M `pc`/`lr` dump into function, file, line, inlined frames, cause, reset reason | Toolchain located from `pio project metadata`, then `<target>-addr2line -pfiaC` on `firmware.elf`; fixes Xtensa `A0` window bits. RISC-V stacks are unwound by `riscv32-esp-elf-gdb` through Espressif's [`esp-idf-panic-decoder`](https://github.com/espressif/esp-idf-panic-decoder) |
 | 📊 **`pio_size_report`** | Why is the firmware this big? Flash/RAM %, loaded sections, biggest symbols with `file:line`, per-file totals, regex `filter` | `pio run -t checkprogsize` (partition-aware) + GNU `size -A` + `nm -S -C -l --size-sort` |
 | 💾 **`pio_partition_table`** | Catch the silent ESP32 corruption where an app-only flash leaves an old partition table on the chip; alignment, overlap, OTA slot, and app-fit checks | Parses the env's partition CSV; `read_device=true` reads 0x8000 with `esptool read_flash` and diffs |
 | 🧯 **`pio_coredump`** | Pull the core dump from the `coredump` partition after a crash and decode task, registers, and backtrace | `esptool read_flash` + optional `esp-coredump info_corefile` (`platformio.mcp[coredump]`) |
@@ -334,6 +334,15 @@ The log rotates at 5 MB and keeps one previous file.
 ## 📝 Serial monitor notes
 
 Sessions talk to the port with pyserial directly, because PlatformIO's own monitor needs an interactive terminal. PlatformIO monitor filters such as `esp32_exception_decoder` therefore do not apply; `pio_decode_backtrace` does that job. Baud and port default from `monitor_speed` / `monitor_port` in `platformio.ini` when `project_dir` is passed, otherwise the single detected dev board at 115200. Opening the port resets most dev boards, which is why `pio_flash_and_verify` sees the boot log from the top.
+
+## 🧩 pioarduino
+
+[pioarduino](https://github.com/pioarduino/platform-espressif32) is a community `espressif32` platform, installed by URL, that supports every Espressif chip on Arduino core 3.x. It keeps the platform name `espressif32`, so projects use it with no server settings.
+
+Tested with pioarduino 55.03.312 (Arduino 3.3.12, ESP-IDF 5.5.5) on ESP32-C6, ESP32-C2 and ESP32-C3 envs: `pio_build` (also `envs=[...]`), `pio_size_report`, `pio_partition_table`, and RISC-V unwinding in `pio_decode_backtrace`. On a physical ESP32 (Xtensa), `pio_flash_and_verify` flashed a crashing sketch and decoded the panic to `level3 <- level2 <- level1 <- setup`. RISC-V upload and serial tools have not run on hardware yet.
+
+- pioarduino refuses to run under Python 3.15 or newer. PlatformIO Core must run on Python 3.10 to 3.14.
+- The first hybrid-compile build of an ESP32-C2 env failed at `checkprogsize` and wiped the other envs' build folders. The second build passed. Build again when that happens.
 
 ## 🛠️ Development
 

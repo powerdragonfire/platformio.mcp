@@ -59,20 +59,35 @@ def _flash_size(cfg: dict, env: str, board: dict) -> tuple[int | None, str]:
 
 
 def _framework_dir(path: Path, env: str) -> Path | None:
-    """The framework-arduinoespressif32 package this env compiles against, from its include paths."""
+    """The framework-arduinoespressif32 package this env compiles against, from its include paths.
+
+    pioarduino splits the framework in two: `framework-arduinoespressif32-libs` (headers and prebuilt
+    libraries, listed first in the include paths) and `framework-arduinoespressif32` (cores, tools,
+    partition CSVs). The package that carries `tools/partitions` wins.
+    """
     try:
         _, meta = project_metadata(str(path), env)
     except Exception:
         meta = {}
+    found: list[Path] = []
     for inc in (meta.get("includes") or {}).get("build", []) or []:
         norm = inc.replace("\\", "/")
         if "/framework-arduinoespressif32" in norm:
             head = norm.split("/framework-arduinoespressif32", 1)[0]
-            pkg = norm[len(head) + 1 :].split("/", 1)[0]
-            return Path(head) / pkg
-    home = Path(os.environ.get("PLATFORMIO_CORE_DIR", Path.home() / ".platformio")) / "packages"
-    hits = sorted(glob.glob(str(home / "framework-arduinoespressif32*")))
-    return Path(hits[0]) if hits else None
+            pkg = Path(head) / norm[len(head) + 1 :].split("/", 1)[0]
+            if pkg not in found:
+                found.append(pkg)
+    if not found:
+        home = Path(os.environ.get("PLATFORMIO_CORE_DIR", Path.home() / ".platformio")) / "packages"
+        found = [Path(h) for h in sorted(glob.glob(str(home / "framework-arduinoespressif32*")))]
+    with_tools = [p for p in found if (p / "tools" / "partitions").is_dir()]
+    if with_tools:
+        return with_tools[0]
+    for pkg in found:  # pioarduino: the -libs package sits beside the one with tools/
+        sibling = pkg.parent / "framework-arduinoespressif32"
+        if (sibling / "tools" / "partitions").is_dir():
+            return sibling
+    return found[0] if found else None
 
 
 def _find_partition_csv(path: Path, cfg: dict, env: str) -> tuple[Path | None, str]:

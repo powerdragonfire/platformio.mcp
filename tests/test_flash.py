@@ -334,3 +334,14 @@ def test_coredump_refuses_while_port_held(project, monkeypatch):
         assert r["ok"] is False and s.id in r["summary"]
     finally:
         mgr.stop(s.id)
+
+
+def test_framework_dir_prefers_package_with_partitions_pioarduino_layout(tmp_path, monkeypatch):
+    """pioarduino lists framework-arduinoespressif32-libs first; the CSVs live in framework-arduinoespressif32."""
+    libs = tmp_path / "packages" / "framework-arduinoespressif32-libs"
+    core = tmp_path / "packages" / "framework-arduinoespressif32"
+    (libs / "esp32c6" / "include").mkdir(parents=True)
+    (core / "tools" / "partitions").mkdir(parents=True)
+    meta = {"includes": {"build": [str(libs / "esp32c6" / "include"), str(tmp_path / "src")]}}
+    monkeypatch.setattr(flash, "project_metadata", lambda p, e: ("c6", meta))
+    assert flash._framework_dir(tmp_path, "c6") == core

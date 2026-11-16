@@ -167,8 +167,15 @@ def _norm(addr: str) -> str:
     return "0x" + addr[2:].lower().lstrip("0").rjust(8, "0") if len(addr) <= 10 else "0x" + addr[2:].lower()
 
 
-def extract_crash(text: str, include_all_hex: bool = False) -> dict:
-    """Pull crash cause, reset reason, and the addresses worth symbolising out of serial output."""
+def extract_crash(text: str, include_all_hex: bool = False, arch: str | None = None) -> dict:
+    """Pull crash cause, reset reason, and the addresses worth symbolising out of serial output.
+
+    `arch` ("xtensa", "riscv", "arm") decides what A0 means: the return address on Xtensa, the first
+    function argument on RISC-V (so it is skipped there). Guessed from the text when not given.
+    """
+    from .unwind import arch_for_text
+
+    arch = arch or arch_for_text(text)
     addresses: list[Address] = []
     seen: set[tuple[str, str]] = set()
 
@@ -187,6 +194,8 @@ def extract_crash(text: str, include_all_hex: bool = False) -> dict:
 
     for m in ESP_REG_RE.finditer(text):
         reg = m.group(1).upper()
+        if reg == "A0" and arch == "riscv":
+            continue
         role = "pc" if reg in ("PC", "EPC1", "MEPC") else ("lr" if reg in ("A0", "RA") else "register")
         add(m.group(2), role, register=reg)
     for m in ESP_CAUSE_RE.finditer(text):
@@ -210,7 +219,7 @@ def extract_crash(text: str, include_all_hex: bool = False) -> dict:
         if c not in seen_causes:
             seen_causes.append(c)
     resets = [m.group(1) for m in RST_REASON_RE.finditer(text)]
-    return {"causes": seen_causes, "reset_reasons": resets, "addresses": addresses, "backtrace_corrupted": corrupted}
+    return {"causes": seen_causes, "reset_reasons": resets, "addresses": addresses, "backtrace_corrupted": corrupted, "arch": arch}
 
 
 # --- addr2line -----------------------------------------------------------------------------
