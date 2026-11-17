@@ -3,7 +3,8 @@
 An event holds the tool name, ok/error code, duration, the names of the arguments passed, the server
 version, the policy, the OS, the Python version, the MCP client's name and version, and the protocol
 version. The `board` and `platform` argument values are kept when they look like PlatformIO registry ids.
-Other argument values, summaries, paths, ports, and serial output never enter an event.
+Other argument values, summaries, paths, ports, and serial output never enter an event. On the PostHog MCP
+SDK path, strip_sdk_payloads removes argument values, tool results and error text, and drops `$exception` events.
 Allowlisted host metadata can supply model and effort. Explicit local prompt opt-in also permits a
 bounded original prompt from host metadata; no chat history is read.
 
@@ -16,6 +17,7 @@ PLATFORMIO_MCP_ANALYTICS=off   no local log, nothing sent
 PLATFORMIO_MCP_ANALYTICS=local local log only, nothing sent
 DO_NOT_TRACK=1 or CI set       nothing sent to PostHog
 PLATFORMIO_MCP_ANALYTICS_URL   also POST each raw event as JSON to this URL (your own endpoint)
+PLATFORMIO_MCP_ANALYTICS_INTENT=1  also send agent-written intent text and missing-capability reports
 """
 
 from __future__ import annotations
@@ -60,8 +62,8 @@ NOTICE = (
     "argument names, board and platform ids, versions, OS, MCP client, process session id), plus one connect event "
     "and one tool-list event per process. Available model/effort metadata is included. Original prompts from host "
     "metadata are captured only with PLATFORMIO_MCP_CAPTURE_PROMPTS=1 (up to 2000 characters). "
-    "The PostHog SDK also captures agent-supplied intent context and missing-capability reports, which may contain user content. "
-    "Other operational argument values, paths, ports, and serial output are excluded from built-in events. "
+    "Argument values, tool output, error text, paths, ports, and serial output are excluded. "
+    "Agent-written intent text and missing-capability reports are sent only with PLATFORMIO_MCP_ANALYTICS_INTENT=1. "
     "Opt out with DO_NOT_TRACK=1 or PLATFORMIO_MCP_ANALYTICS=local. Details: README, 'Usage analytics'."
 )
 
@@ -88,6 +90,24 @@ def remote_allowed() -> bool:
 
 def posthog_key() -> str:
     return os.environ.get("PLATFORMIO_MCP_POSTHOG_KEY", POSTHOG_KEY).strip()
+
+
+# PostHog MCP SDK properties that carry argument values, tool output or error text: project paths, ports,
+# summaries, compiler errors with source excerpts. strip_sdk_payloads removes them before sending.
+SDK_DROPPED_PROPERTIES = frozenset({"$mcp_parameters", "$mcp_response", "$mcp_error_message"})
+
+
+def intent_capture() -> bool:
+    """Agent-written `context` text and `get_more_tools` reports are free text, so they are sent only on opt-in."""
+    return _truthy("PLATFORMIO_MCP_ANALYTICS_INTENT")
+
+
+def strip_sdk_payloads(capture: dict[str, Any]) -> dict[str, Any] | None:
+    """PostHog MCP SDK before_send: drop `$exception` events and every property in SDK_DROPPED_PROPERTIES."""
+    if capture.get("event") == "$exception":
+        return None
+    properties = capture.get("properties") or {}
+    return {**capture, "properties": {k: v for k, v in properties.items() if k not in SDK_DROPPED_PROPERTIES}}
 
 
 def install_id(directory: Path) -> tuple[str, bool]:

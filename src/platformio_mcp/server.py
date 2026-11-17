@@ -123,7 +123,9 @@ def create_server(record_usage: bool = False) -> MCPServer:
 
     The PostHog MCP SDK uses POSTHOG_PROJECT_TOKEN or the release ingestion key when remote sending is allowed
     (PLATFORMIO_MCP_ANALYTICS=on, no DO_NOT_TRACK, no CI). While it runs, the recorder keeps the local
-    log and stops its own PostHog sending, so each `$mcp_*` event reaches PostHog once.
+    log and stops its own PostHog sending, so each `$mcp_*` event reaches PostHog once. The SDK sends no
+    argument values, tool results, error text or `$exception` events; agent intent text and `get_more_tools`
+    need PLATFORMIO_MCP_ANALYTICS_INTENT=1.
     """
     mcp = PlatformIOServer(name="platformio", version=__version__, instructions=INSTRUCTIONS + f"\nActive policy: {policy()}.", lifespan=lifespan)
     if record_usage and analytics.enabled():
@@ -143,10 +145,12 @@ def create_server(record_usage: bool = False) -> MCPServer:
                     return f"Invoking {name}"
                 return None
 
+            intent = analytics.intent_capture()
             mcp.posthog_analytics = instrument(
                 mcp, client, MCPAnalyticsOptions(
-                    context=True, intent_fallback=intent_fallback, report_missing=True,
+                    context=intent, intent_fallback=intent_fallback, report_missing=intent,
                     capture_model=True, event_properties=telemetry.sdk_properties,
+                    enable_exception_autocapture=False, before_send=analytics.strip_sdk_payloads,
                 )
             )
             sdk = True

@@ -6,6 +6,12 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-16
+
+### Changed
+- The PostHog MCP SDK path no longer sends tool argument values (`$mcp_parameters`), tool results (`$mcp_response`), error text (`$mcp_error_message`) or `$exception` events. A `before_send` filter removes them, so remote events hold what the README lists ([#34](https://github.com/powerdragonfire/platformio.mcp/issues/34), thanks electron-rare).
+- Agent-written intent text (the injected `context` argument) and `get_more_tools` missing-capability reports are off by default. Set `PLATFORMIO_MCP_ANALYTICS_INTENT=1` to send them. Without it, `$mcp_intent` is `Invoking <tool name>`.
+
 ## [0.8.0] - 2026-11-14
 
 ### Added
