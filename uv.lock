@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -459,20 +459,20 @@ wheels = [
 
 [[package]]
 name = "esp-coredump"
-version = "1.17.2"
+version = "1.18.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "construct" },
-    { name = "esp-pylib", extra = ["cli"] },
+    { name = "esp-pylib", extra = ["cli", "ide"] },
     { name = "esptool" },
     { name = "pygdbmi" },
     { name = "rich" },
     { name = "rich-click" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/35/8c/517cfe3f9f9efbcdf2fafd9883774d630284864e8e44468b2d96ac80514c/esp_coredump-1.17.2.tar.gz", hash = "sha256:7c0eb32404c8f92be50af0e83b2bb14a33eec480b6cac76a867830d564074a6a", size = 40513, upload-time = "2026-09-16T13:02:34.566Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b0/5c/423fe65577336e4f913f674580e9d0a06e53fc799ac9d72242a7fd4e2002/esp_coredump-1.18.1.tar.gz", hash = "sha256:a2280db78909d5fbb505350813641ccc6187b76e42d5da19809ef7fc13106ac2", size = 49230, upload-time = "2026-11-02T11:52:59.873Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/9f/7d68a55b3ced37e1c1935d0bb5a8aeecdf5b94f5fa899691b3737472d03a/esp_coredump-1.17.2-py3-none-any.whl", hash = "sha256:376d594d565fede658481d3780ed5623b9b993592078dfcf75fecbab53901a70", size = 42869, upload-time = "2026-09-16T13:02:33.405Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/ef/590d2ded1c9028e9c39d84ec031188133a0d1536945273890f3117a218fd/esp_coredump-1.18.1-py3-none-any.whl", hash = "sha256:a8a0a2a0feacc89f495e5ee0a95b9178008719bdff86d9db27c818ed0c86dd33", size = 51018, upload-time = "2026-11-02T11:52:58.363Z" },
 ]
 
 [[package]]
@@ -812,7 +812,7 @@ wheels = [
 
 [[package]]
 name = "posthog"
-version = "7.86.6"
+version = "7.91.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
@@ -820,9 +820,9 @@ dependencies = [
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e5/ed/ace897f5b58a8e5a4051478b3a534eb9218af6df0f0be6c5dee8dd81d6f4/posthog-7.86.6.tar.gz", hash = "sha256:5232c5b49d26fb5bb72f53cca9d66a3e11876c308e2f457416136862ca3b62ab", size = 916157, upload-time = "2026-11-10T13:04:14.847Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d0/50/1acd1a03d0fb49b5b9c7617ec1eec7df86edf475538dec4e18d906166cab/posthog-7.91.1.tar.gz", hash = "sha256:e4b3d34854860d814c04b276057c52282bab8fa0d1636d01e44868b32037649c", size = 1000112, upload-time = "2026-11-13T14:22:48.829Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/04/532271b1d240e4f8ae9623fd3187ccc8d21aa244efa7e0b08135c753746f/posthog-7.86.6-py3-none-any.whl", hash = "sha256:1108635ceea437c0f3ab014fc5c865f8fda085d3018a009f3818353e26b909fd", size = 1060169, upload-time = "2026-11-10T13:04:12.891Z" },
+    { url = "https://files.pythonhosted.org/packages/89/1f/90c26e72e23cfae827dcff7a76ecad623f1a447d613079fbd0bc1c345c06/posthog-7.91.1-py3-none-any.whl", hash = "sha256:22ce67d6ea2adb523920edb00033a8c49377704c523513f6afe168eded5e0b98", size = 1150356, upload-time = "2026-11-13T14:22:46.537Z" },
 ]
 
 [[package]]
