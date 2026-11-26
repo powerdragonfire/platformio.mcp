@@ -6,6 +6,9 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `FUNDING.md` and `.github/FUNDING.yml`, so GitHub shows a Sponsor button linking to [Buy Me a Coffee](https://buymeacoffee.com/powerdragonfire). The README gets a matching badge.
+
 ## [0.9.0] - 2026-11-16
 
 ### Changed
