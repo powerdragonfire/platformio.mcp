@@ -11,6 +11,7 @@
   <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-blue">
   <img alt="Tools" src="https://img.shields.io/badge/MCP%20tools-44-6f42c1">
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <a href="https://buymeacoffee.com/powerdragonfire"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buy-me-a-coffee&logoColor=black"></a>
 </p>
 
 <p align="center">
@@ -377,6 +378,8 @@ Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 ## 🤝 Contributing
 
 Bug reports from real boards are the most useful thing you can send. Use the [issue forms](https://github.com/powerdragonfire/platformio.mcp/issues/new/choose), ask questions in [Discussions](https://github.com/powerdragonfire/platformio.mcp/discussions), and read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR. Issues tagged [good first issue](https://github.com/powerdragonfire/platformio.mcp/labels/good%20first%20issue) are scoped for newcomers.
+
+To support the project financially, see [FUNDING.md](FUNDING.md).
 
 ## 🔭 Prior art
 
